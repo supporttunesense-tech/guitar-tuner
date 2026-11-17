@@ -36,6 +36,10 @@ enum class HeadShape {
 
 data class Instrument(
     val name: String,
+    /** Короткое название для плашки. */
+    val shortName: String,
+    /** «Тюнер для …» */
+    val genitive: String,
     val shape: HeadShape,
     val tunings: List<Tuning>,
 ) {
@@ -64,18 +68,18 @@ private val GUITAR6 = listOf(
 )
 
 val INSTRUMENTS = listOf(
-    Instrument("Акустическая гитара", HeadShape.ACOUSTIC, GUITAR6),
-    Instrument("Электрогитара", HeadShape.ELECTRIC, GUITAR6),
-    Instrument("Классическая гитара", HeadShape.CLASSICAL, GUITAR6),
+    Instrument("Акустическая гитара", "Акустика", "гитары", HeadShape.ACOUSTIC, GUITAR6),
+    Instrument("Электрогитара", "Электрогитара", "гитары", HeadShape.ELECTRIC, GUITAR6),
+    Instrument("Классическая гитара", "Классика", "гитары", HeadShape.CLASSICAL, GUITAR6),
     Instrument(
-        "7-струнная гитара", HeadShape.ACOUSTIC, listOf(
+        "7-струнная гитара", "Гитара (7 струн)", "гитары", HeadShape.ACOUSTIC, listOf(
             Tuning("Стандартный (B)", listOf(35, 40, 45, 50, 55, 59, 64)),
             Tuning("Drop A", listOf(33, 40, 45, 50, 55, 59, 64)),
             Tuning("Русский строй", listOf(38, 43, 47, 50, 55, 59, 62)),
         )
     ),
     Instrument(
-        "Бас-гитара (4 струны)", HeadShape.BASS, listOf(
+        "Бас-гитара (4 струны)", "Бас (4 струны)", "бас-гитары", HeadShape.BASS, listOf(
             Tuning("Стандартный", listOf(28, 33, 38, 43)),
             Tuning("Drop D", listOf(26, 33, 38, 43)),
             Tuning("Полтона вниз", listOf(27, 32, 37, 42)),
@@ -84,20 +88,20 @@ val INSTRUMENTS = listOf(
         )
     ),
     Instrument(
-        "Бас-гитара (5 струн)", HeadShape.BASS, listOf(
+        "Бас-гитара (5 струн)", "Бас (5 струн)", "бас-гитары", HeadShape.BASS, listOf(
             Tuning("Стандартный", listOf(23, 28, 33, 38, 43)),
             Tuning("Полтона вниз", listOf(22, 27, 32, 37, 42)),
         )
     ),
     Instrument(
-        "Укулеле", HeadShape.UKULELE, listOf(
+        "Укулеле", "Укулеле", "укулеле", HeadShape.UKULELE, listOf(
             Tuning("Стандартный", listOf(67, 60, 64, 69)),
             Tuning("Low G", listOf(55, 60, 64, 69)),
             Tuning("D-строй", listOf(69, 62, 66, 71)),
             Tuning("Баритон", listOf(50, 55, 59, 64)),
         )
     ),
-    Instrument("Скрипка", HeadShape.VIOLIN, listOf(Tuning("Стандартный", listOf(55, 62, 69, 76)))),
-    Instrument("Альт", HeadShape.VIOLIN, listOf(Tuning("Стандартный", listOf(48, 55, 62, 69)))),
-    Instrument("Виолончель", HeadShape.VIOLIN, listOf(Tuning("Стандартный", listOf(36, 43, 50, 57)))),
+    Instrument("Скрипка", "Скрипка", "скрипки", HeadShape.VIOLIN, listOf(Tuning("Стандартный", listOf(55, 62, 69, 76)))),
+    Instrument("Альт", "Альт", "альта", HeadShape.VIOLIN, listOf(Tuning("Стандартный", listOf(48, 55, 62, 69)))),
+    Instrument("Виолончель", "Виолончель", "виолончели", HeadShape.VIOLIN, listOf(Tuning("Стандартный", listOf(36, 43, 50, 57)))),
 )

@@ -6,12 +6,12 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,9 +20,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,30 +39,38 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tvinpick.tuner.audio.Chord
 import com.tvinpick.tuner.model.INSTRUMENTS
 import com.tvinpick.tuner.model.Warning
 import com.tvinpick.tuner.model.noteName
-import com.tvinpick.tuner.model.noteOctave
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
 object TunerColors {
-    val Bg = Color(0xFF0D1014)
-    val Text = Color(0xFFECEFF1)
-    val Dim = Color(0xFF7D8893)
-    val Good = Color(0xFF2ECC71)
+    val Bg1 = Color(0xFF0B1A22)
+    val Bg2 = Color(0xFF08131A)
+    val Card = Color(0xFF11222B)
+    val CardBorder = Color(0xFF1D3440)
+    val Text = Color(0xFFEEF3F5)
+    val Dim = Color(0xFF8EA1AB)
+    val Good = Color(0xFF3DDC97)
     val Near = Color(0xFFF1C40F)
     val Far = Color(0xFFFF8A3D)
     val Danger = Color(0xFFFF4D4D)
@@ -70,14 +84,13 @@ private fun centsColor(cents: Float): Color = when {
 
 private fun chordName(c: Chord) = noteName(c.root) + c.type.suffix
 
-/** Всё, что показывает центральная часть экрана. */
+/** Что показывает шкала и строки под ней. */
 private data class Display(
     val main: String,
-    val octave: String?,
-    val sub: String,
-    val color: Color,
-    val showMarker: Boolean,
+    val moving: Boolean,
     val lit: Boolean,
+    val color: Color,
+    val sub: String,
     val status: String,
     val statusColor: Color,
     val hint: String,
@@ -90,36 +103,25 @@ private fun display(state: UiState): Display {
     if (s.showChord) {
         val chord = s.chord.chord!!
         return Display(
-            main = chordName(chord),
-            octave = null,
+            main = chordName(chord), moving = false, lit = true,
+            color = if (s.chord.fresh) TunerColors.Good else TunerColors.Dim,
             sub = chord.notes.joinToString("  ·  ") { noteName(it) },
-            color = if (s.chord.fresh) TunerColors.Good else TunerColors.Text,
-            showMarker = false,
-            lit = s.chord.fresh,
-            status = "Аккорд",
-            statusColor = TunerColors.Dim,
-            hint = s.chord.history.takeLast(5).joinToString("  →  ") { chordName(it) },
+            status = s.chord.history.takeLast(5).joinToString("  →  ") { chordName(it) },
+            statusColor = TunerColors.Dim, hint = "",
         )
     }
-    if (state.error != null) {
-        return Display("–", null, "", TunerColors.Dim, false, false, state.error, TunerColors.Danger, "")
-    }
+    val error = state.error
+    if (error != null) return Display("–", false, false, TunerColors.Dim, "", error, TunerColors.Danger, "")
     if (!r.active) {
-        val note = state.manualString?.let { state.tuning.notes[it] }
         val allDone = s.tunedStrings.size == n
+        val selected = state.manualString?.let { noteName(state.tuning.notes[it]) }
         return Display(
-            main = note?.let { noteName(it) } ?: "–",
-            octave = note?.let { "${noteOctave(it)}" },
-            sub = "",
-            color = Color(0xFF4A535C),
-            showMarker = false,
-            lit = false,
-            status = if (allDone) "Все струны настроены" else "Дёрни струну",
-            statusColor = if (allDone) TunerColors.Good else TunerColors.Dim,
-            hint = if (state.chordsEnabled && !allDone) "или сыграй аккорд — я его назову" else "",
+            main = selected ?: "–", moving = false, lit = false, color = TunerColors.Dim,
+            sub = if (state.chordsEnabled) "Дёрни струну или сыграй аккорд" else "Дёрни струну",
+            status = if (allDone) "Все струны настроены" else "",
+            statusColor = TunerColors.Good, hint = "",
         )
     }
-    val target = r.targetMidi ?: 0
     val warning = r.warning
     val color = if (warning == Warning.TooHigh) TunerColors.Danger else centsColor(r.cents)
     val (status, statusColor) = when {
@@ -131,21 +133,12 @@ private fun display(state: UiState): Display {
         r.cents < 0 -> "Подтяни ↑" to color
         else -> "Ослабь ↓" to color
     }
-    val stringIndex = r.stringIndex
+    val cents = r.cents.roundToInt()
     return Display(
-        main = noteName(target),
-        octave = "${noteOctave(target)}",
-        sub = "${if (r.cents > 0) "+" else ""}${r.cents.roundToInt()} ¢    ${"%.1f".format(r.frequency)} Гц",
-        color = color,
-        showMarker = true,
-        lit = true,
-        status = status,
-        statusColor = statusColor,
-        hint = when {
-            r.weak -> "Играй громче или поднеси телефон ближе"
-            stringIndex != null -> "${n - stringIndex}-я струна"
-            else -> ""
-        },
+        main = noteName(r.targetMidi ?: 0), moving = true, lit = true, color = color,
+        sub = "${"%.1f".format(r.frequency)} Гц  ·  ${if (cents > 0) "+" else if (cents < 0) "−" else ""}${abs(cents)} ¢",
+        status = status, statusColor = statusColor,
+        hint = if (r.weak) "Играй громче или поднеси телефон ближе" else "",
     )
 }
 
@@ -154,17 +147,16 @@ fun TunerScreen(state: UiState, vm: TunerViewModel) {
     val d = display(state)
     val r = state.session.reading
 
-    // Плавные переходы: стрелка на пружине, цвета и свечение — мягко
     val cents by animateFloatAsState(
-        targetValue = if (r.active) r.cents.coerceIn(-60f, 60f) else 0f,
+        targetValue = if (d.moving) r.cents.coerceIn(-55f, 55f) else 0f,
         animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessLow),
         label = "cents"
     )
     val color by animateColorAsState(d.color, tween(250), label = "color")
     val statusColor by animateColorAsState(d.statusColor, tween(250), label = "statusColor")
-    val glow by animateFloatAsState(if (d.lit) 1f else 0.25f, tween(400), label = "glow")
+    val glow by animateFloatAsState(if (d.lit) (if (abs(r.cents) < 5f || !d.moving) 1f else 0.6f) else 0f, tween(400), label = "glow")
 
-    // Волна и лёгкая вибрация, когда струна настроена
+    // Волна и вибрация, когда струна настроена
     val ripple = remember { Animatable(0f) }
     val haptic = LocalHapticFeedback.current
     LaunchedEffect(r.confirmed) {
@@ -179,80 +171,56 @@ fun TunerScreen(state: UiState, vm: TunerViewModel) {
     Column(
         Modifier
             .fillMaxSize()
-            .background(TunerColors.Bg)
-            .safeDrawingPadding(),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .background(Brush.verticalGradient(listOf(TunerColors.Bg1, TunerColors.Bg2)))
+            .safeDrawingPadding()
+            .padding(horizontal = 14.dp)
     ) {
-        Header(state, vm)
+        TitleRow(state, vm)
+        Spacer(Modifier.height(14.dp))
+        Pickers(state, vm)
 
-        // Шкала с нотой или аккордом
-        BoxWithConstraints(Modifier.fillMaxWidth().height(250.dp)) {
-            val density = LocalDensity.current
-            val (_, cy, rad) = with(density) { gaugeGeometry(maxWidth.toPx(), maxHeight.toPx()) }
-            val noteCenter = with(density) { (cy - rad * 0.40f).toDp() }
-            Gauge(
-                cents = cents,
-                color = color,
-                showMarker = d.showMarker,
-                glow = glow,
-                ripple = ripple.value,
-                modifier = Modifier.fillMaxSize()
-            )
-            Column(
-                Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = (noteCenter - 50.dp).coerceAtLeast(0.dp)),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        d.main,
-                        style = TextStyle(
-                            color = color,
-                            fontSize = 84.sp,
-                            lineHeight = 92.sp,
-                            fontWeight = FontWeight.Bold,
-                            shadow = if (d.lit) Shadow(color.copy(alpha = 0.7f), blurRadius = 40f) else null,
-                        ),
-                        maxLines = 1
-                    )
-                    if (d.octave != null) {
-                        Text(
-                            d.octave, color = TunerColors.Dim, fontSize = 20.sp,
-                            modifier = Modifier.padding(start = 2.dp, bottom = 14.dp)
-                        )
-                    }
-                }
-                Text(d.sub, color = TunerColors.Dim, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-            }
-        }
-
-        Spacer(Modifier.height(10.dp))
-        Text(d.status, color = statusColor, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+        TunerStrip(
+            text = d.main,
+            cents = cents,
+            moving = d.moving,
+            color = color,
+            lit = d.lit,
+            glow = glow,
+            ripple = ripple.value,
+            modifier = Modifier.fillMaxWidth().height(140.dp)
+        )
         Text(
-            d.hint, color = TunerColors.Dim, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 4.dp, start = 16.dp, end = 16.dp)
+            d.sub, color = TunerColors.Dim, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()
+        )
+        Text(
+            d.status, color = statusColor, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+        )
+        Text(
+            d.hint, color = TunerColors.Dim, fontSize = 12.sp, textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
         )
 
         Box(Modifier.fillMaxWidth().weight(1f)) {
             Headstock(
                 instrument = state.instrument,
                 tuning = state.tuning,
-                activeString = if (state.session.showChord) null else if (r.active) r.stringIndex else state.manualString,
-                activeColor = if (r.active) color else TunerColors.Text,
-                manualString = state.manualString,
+                activeString = when {
+                    state.session.showChord -> null
+                    r.active -> r.stringIndex
+                    else -> state.manualString
+                },
+                activeColor = if (r.active && !state.session.showChord) color else TunerColors.Good,
+                selectedString = state.manualString,
                 tunedStrings = state.session.tunedStrings,
                 onPegClick = { i -> vm.selectString(if (state.manualString == i) null else i) },
                 modifier = Modifier.fillMaxSize()
             )
-            if (state.manualString != null) {
-                TextButton(onClick = { vm.selectString(null) }, modifier = Modifier.align(Alignment.TopEnd)) {
-                    Text("Авто", color = TunerColors.Good, fontSize = 13.sp)
-                }
-            }
             if (state.session.tunedStrings.isNotEmpty()) {
                 TextButton(onClick = vm::resetTuned, modifier = Modifier.align(Alignment.TopStart)) {
-                    Text("Сбросить ✓", color = TunerColors.Dim, fontSize = 13.sp)
+                    Text("Сбросить ✓", color = TunerColors.Dim, fontSize = 12.sp)
                 }
             }
         }
@@ -260,89 +228,172 @@ fun TunerScreen(state: UiState, vm: TunerViewModel) {
 }
 
 @Composable
-private fun Header(state: UiState, vm: TunerViewModel) {
-    Box(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp)) {
-        Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-            Menu(
-                items = INSTRUMENTS.map { it.name },
-                selected = state.instrumentIndex,
-                onSelect = vm::setInstrument
-            ) {
-                Text(
-                    "${state.instrument.name}  ▾", color = TunerColors.Text,
-                    fontSize = 16.sp, fontWeight = FontWeight.SemiBold
+private fun TitleRow(state: UiState, vm: TunerViewModel) {
+    Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                buildAnnotatedString {
+                    withStyle(SpanStyle(color = TunerColors.Text)) { append("Tune") }
+                    withStyle(SpanStyle(color = TunerColors.Good)) { append("Sense") }
+                },
+                fontSize = 30.sp, fontWeight = FontWeight.Bold
+            )
+            Text("Тюнер для ${state.instrument.genitive}", color = TunerColors.Dim, fontSize = 13.sp)
+        }
+        // Автонастройка: тюнер сам определяет струну
+        val auto = state.manualString == null
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(50))
+                .background(TunerColors.Card)
+                .border(1.dp, TunerColors.CardBorder, RoundedCornerShape(50))
+                .padding(start = 14.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Автонастройка", color = TunerColors.Text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Switch(
+                checked = auto,
+                onCheckedChange = { on ->
+                    if (on) vm.selectString(null)
+                    else vm.selectString(state.session.reading.stringIndex ?: 0)
+                },
+                modifier = Modifier.scale(0.75f),
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = TunerColors.Good,
+                    checkedBorderColor = Color.Transparent,
+                    uncheckedThumbColor = Color(0xFFB8C6CD),
+                    uncheckedTrackColor = Color(0xFF2A404B),
+                    uncheckedBorderColor = Color.Transparent,
                 )
-            }
-            Menu(
-                items = state.instrument.tunings.map { "${it.name}   ${it.label}" },
-                selected = state.tuningIndex,
-                onSelect = vm::setTuning
-            ) {
-                Text(
-                    "${state.tuning.name}  ·  ${state.tuning.label}  ▾",
-                    color = TunerColors.Dim, fontSize = 13.sp
-                )
+            )
+        }
+    }
+}
+
+@Composable
+private fun Pickers(state: UiState, vm: TunerViewModel) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Box(Modifier.weight(1f)) {
+            var open by remember { mutableStateOf(false) }
+            Pill(onClick = { open = true }, icon = true, text = state.instrument.shortName)
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                INSTRUMENTS.forEachIndexed { i, inst ->
+                    MenuItem(inst.name, i == state.instrumentIndex) { open = false; vm.setInstrument(i) }
+                }
             }
         }
-        Box(Modifier.align(Alignment.TopEnd).padding(end = 12.dp)) {
-            Menu(
-                items = A4_OPTIONS.map { "A4 = $it Гц" + if (it == 440) "  (стандарт)" else "" },
-                selected = A4_OPTIONS.indexOf(state.a4),
-                onSelect = { vm.setA4(A4_OPTIONS[it]) }
-            ) {
-                Text("${state.a4} Гц", color = TunerColors.Dim, fontSize = 12.sp)
+        Box(Modifier.weight(1f)) {
+            var open by remember { mutableStateOf(false) }
+            val t = state.tuning
+            val short = if (t.name.startsWith("Стандарт")) "Стандарт" else t.name
+            Pill(onClick = { open = true }, icon = false, text = "$short (${t.notes.joinToString("") { noteName(it) }})")
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                state.instrument.tunings.forEachIndexed { i, tuning ->
+                    MenuItem("${tuning.name}   ${tuning.label}", i == state.tuningIndex) { open = false; vm.setTuning(i) }
+                }
+                HorizontalDivider(color = TunerColors.CardBorder)
+                // Камертон
+                Row(
+                    Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Камертон A4", fontSize = 14.sp, modifier = Modifier.weight(1f, fill = false))
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(onClick = { vm.setA4(state.a4 - 1) }) { Text("−", fontSize = 18.sp) }
+                    Text("${state.a4} Гц", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    TextButton(onClick = { vm.setA4(state.a4 + 1) }) { Text("+", fontSize = 18.sp) }
+                }
+                if (state.a4 != 440) {
+                    MenuItem("Вернуть 440 Гц", false) { vm.setA4(440) }
+                }
             }
         }
     }
 }
 
-private val A4_OPTIONS = listOf(415, 430, 432, 435, 438, 439, 440, 441, 442, 443, 444, 445, 446)
-
-/** Текст, по нажатию на который раскрывается список. */
 @Composable
-private fun Menu(
-    items: List<String>,
-    selected: Int,
-    onSelect: (Int) -> Unit,
-    label: @Composable () -> Unit,
-) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        Box(
-            Modifier
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) { open = true }
-                .padding(horizontal = 8.dp, vertical = 3.dp)
-        ) { label() }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            items.forEachIndexed { i, text ->
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            text,
-                            fontWeight = if (i == selected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (i == selected) TunerColors.Good else Color.Unspecified
-                        )
-                    },
-                    onClick = { open = false; onSelect(i) }
-                )
-            }
+private fun MenuItem(text: String, selected: Boolean, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = {
+            Text(
+                text,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                color = if (selected) TunerColors.Good else Color.Unspecified
+            )
+        },
+        onClick = onClick
+    )
+}
+
+@Composable
+private fun Pill(onClick: () -> Unit, icon: Boolean, text: String) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(50))
+            .background(TunerColors.Card)
+            .border(1.dp, TunerColors.CardBorder, RoundedCornerShape(50))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (icon) {
+            GuitarIcon(Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
         }
+        Text(
+            text, color = TunerColors.Text, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
+        )
+        Chevron(Modifier.size(14.dp))
+    }
+}
+
+@Composable
+private fun GuitarIcon(modifier: Modifier) {
+    Canvas(modifier) {
+        val u = size.width / 20f
+        val stroke = Stroke(width = 1.5f * u)
+        drawCircle(TunerColors.Text, 5.5f * u, Offset(7f * u, 14f * u), style = stroke)
+        drawCircle(TunerColors.Text, 3.8f * u, Offset(11.5f * u, 9.5f * u), style = stroke)
+        drawCircle(TunerColors.Text, 1.4f * u, Offset(7f * u, 14f * u))
+        drawLine(TunerColors.Text, Offset(13f * u, 8f * u), Offset(19f * u, 2f * u), strokeWidth = 1.5f * u, cap = StrokeCap.Round)
+    }
+}
+
+@Composable
+private fun Chevron(modifier: Modifier) {
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        val sw = 1.6f * density
+        drawLine(TunerColors.Text, Offset(w * 0.1f, h * 0.35f), Offset(w * 0.5f, h * 0.7f), strokeWidth = sw, cap = StrokeCap.Round)
+        drawLine(TunerColors.Text, Offset(w * 0.5f, h * 0.7f), Offset(w * 0.9f, h * 0.35f), strokeWidth = sw, cap = StrokeCap.Round)
     }
 }
 
 @Composable
 fun PermissionScreen(openSettings: Boolean, onRequest: () -> Unit) {
     Column(
-        Modifier.fillMaxSize().background(TunerColors.Bg).padding(32.dp),
+        Modifier
+            .fillMaxSize()
+            .background(Brush.verticalGradient(listOf(TunerColors.Bg1, TunerColors.Bg2)))
+            .padding(32.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
+            buildAnnotatedString {
+                withStyle(SpanStyle(color = TunerColors.Text)) { append("Tune") }
+                withStyle(SpanStyle(color = TunerColors.Good)) { append("Sense") }
+            },
+            fontSize = 34.sp, fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.height(20.dp))
+        Text(
             "Тюнеру нужен микрофон, чтобы слышать инструмент.\nЗвук никуда не записывается и не отправляется.",
-            color = TunerColors.Text, fontSize = 17.sp, textAlign = TextAlign.Center
+            color = TunerColors.Text, fontSize = 16.sp, textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(24.dp))
         Button(onClick = onRequest) {

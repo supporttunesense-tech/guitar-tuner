@@ -43,8 +43,9 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(
                 colorScheme = darkColorScheme(
                     primary = TunerColors.Good,
-                    background = TunerColors.Bg,
-                    surface = Color(0xFF1A2027),
+                    background = TunerColors.Bg1,
+                    surface = TunerColors.Card,
+                    surfaceContainer = TunerColors.Card,
                 )
             ) {
                 val context = LocalContext.current
