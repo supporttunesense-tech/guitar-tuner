@@ -1,7 +1,6 @@
 package com.tvinpick.tuner
 
 import com.tvinpick.tuner.audio.PitchDetector
-import com.tvinpick.tuner.model.Mode
 import com.tvinpick.tuner.model.INSTRUMENTS
 import com.tvinpick.tuner.model.TunerLogic
 import com.tvinpick.tuner.model.Warning
@@ -89,14 +88,5 @@ class TunerTest {
         var r = logic.process(110f, 0.05f, 0)
         repeat(3) { r = logic.process(110f, 0.05f, 46L * (it + 1)) }
         assertEquals(Warning.OtherString(1), r.warning)
-    }
-
-    @Test
-    fun chromaticFindsNearestNote() {
-        val logic = TunerLogic()
-        logic.mode = Mode.CHROMATIC
-        val r = logic.process(445f, 0.05f, 0)
-        assertEquals(69, r.targetMidi)
-        assertTrue(abs(r.cents - 19.56f) < 0.1f)
     }
 }

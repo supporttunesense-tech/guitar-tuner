@@ -14,7 +14,7 @@ class PitchAnalyzer(sampleRate: Int, minFreq: Float, maxFreq: Float) {
     private val buf = FloatArray(frame)
 
     /** [samples] — свежий звук, самые новые сэмплы в конце. */
-    fun detect(samples: FloatArray): Float? {
+    fun detect(samples: FloatArray): PitchDetector.Result? {
         val n = samples.size
         if (decimate == 1) {
             System.arraycopy(samples, n - frame, buf, 0, frame)
@@ -22,7 +22,7 @@ class PitchAnalyzer(sampleRate: Int, minFreq: Float, maxFreq: Float) {
             val start = n - frame * 2
             for (i in 0 until frame) buf[i] = 0.5f * (samples[start + 2 * i] + samples[start + 2 * i + 1])
         }
-        return detector.detect(buf)?.takeIf { it.confidence > 0.6f }?.frequency
+        return detector.detect(buf)?.takeIf { it.confidence > 0.6f }
     }
 
     companion object {
@@ -32,6 +32,5 @@ class PitchAnalyzer(sampleRate: Int, minFreq: Float, maxFreq: Float) {
             maxFreq = (midiToFreq(instrument.highestMidi) * 2.5f).coerceAtMost(2000f),
         )
 
-        fun chromatic(sampleRate: Int) = PitchAnalyzer(sampleRate, 40f, 2000f)
     }
 }

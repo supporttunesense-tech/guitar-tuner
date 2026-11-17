@@ -19,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -43,7 +44,7 @@ class MainActivity : ComponentActivity() {
                 colorScheme = darkColorScheme(
                     primary = TunerColors.Good,
                     background = TunerColors.Bg,
-                    surface = TunerColors.Card,
+                    surface = Color(0xFF1A2027),
                 )
             ) {
                 val context = LocalContext.current

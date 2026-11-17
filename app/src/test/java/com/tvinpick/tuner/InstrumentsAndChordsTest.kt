@@ -44,7 +44,7 @@ class InstrumentsAndChordsTest {
         for (inst in INSTRUMENTS) {
             val analyzer = PitchAnalyzer.forInstrument(inst, sr)
             for (m in inst.tunings.flatMap { it.notes }.distinct()) {
-                val f = analyzer.detect(strum(listOf(m), m))
+                val f = analyzer.detect(strum(listOf(m), m))?.frequency
                 assertNotNull("${inst.name}: нет ноты ${noteName(m)}$m", f)
                 val cents = 1200 * log2(f!! / freq(m))
                 assertTrue("${inst.name} ${noteName(m)}$m: $cents центов", abs(cents) < 3.0)

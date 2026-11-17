@@ -1,6 +1,7 @@
 package com.tvinpick.tuner.audio
 
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.log2
 import kotlin.math.roundToInt
@@ -38,7 +39,50 @@ class ChordDetector(private val sampleRate: Int, val size: Int = 16384) {
     private val cosT = FloatArray(size / 2) { cos(-2 * PI * it / size).toFloat() }
     private val sinT = FloatArray(size / 2) { sin(-2 * PI * it / size).toFloat() }
 
-    class Frame(val chroma: FloatArray, val bass: Int)
+    class Frame(
+        val chroma: FloatArray,
+        val bass: Int,
+        private val peakFreqs: FloatArray,
+        private val peakMags: FloatArray,
+        private val spectrum: FloatArray,
+        private val binHz: Float,
+        private val maxMag: Float,
+    ) {
+        /**
+         * Насколько громко звучит сама частота [f0] (0..1 от самого громкого пика).
+         * У настоящей струны основной тон есть, а у «воображаемого баса»,
+         * который получается из нот аккорда, его нет.
+         */
+        fun fundamentalStrength(f0: Float): Float {
+            val bin = (f0 / binHz).roundToInt()
+            var m = 0f
+            for (k in (bin - 2)..(bin + 2)) if (k in spectrum.indices && spectrum[k] > m) m = spectrum[k]
+            return if (maxMag > 0f) m / maxMag else 0f
+        }
+
+        /** Сколько разных нот заметно звучит. */
+        val noteCount: Int
+            get() {
+                val max = chroma.max()
+                return chroma.count { it > max * 0.3f }
+            }
+
+        /**
+         * Доля энергии спектра, которая приходится на обертоны частоты [f0].
+         * У одной струны почти 1, у аккорда заметно меньше.
+         */
+        fun harmonicity(f0: Float): Float {
+            var total = 0f
+            var harmonic = 0f
+            for (i in peakFreqs.indices) {
+                val ratio = peakFreqs[i] / f0
+                val k = ratio.roundToInt()
+                total += peakMags[i]
+                if (k >= 1 && abs(1200f * log2(ratio / k)) < 30f) harmonic += peakMags[i]
+            }
+            return if (total > 0f) harmonic / total else 0f
+        }
+    }
 
     /** Хромаграмма кадра или null, если ничего не звучит. */
     fun analyze(samples: FloatArray): Frame? {
@@ -54,6 +98,8 @@ class ChordDetector(private val sampleRate: Int, val size: Int = 16384) {
 
         val chroma = FloatArray(12)
         var bass = -1
+        val freqs = ArrayList<Float>()
+        val mags = ArrayList<Float>()
         for (k in lo + 1 until hi) {
             val b = mag[k]
             if (b > mag[k - 1] && b >= mag[k + 1] && b > max * PEAK_REL) {
@@ -65,10 +111,12 @@ class ChordDetector(private val sampleRate: Int, val size: Int = 16384) {
                 val pc = ((69f + 12f * log2(freq / 440f)).roundToInt() % 12 + 12) % 12
                 chroma[pc] += sqrt(b)
                 if (bass < 0) bass = pc
+                freqs.add(freq)
+                mags.add(b)
             }
         }
         if (bass < 0) return null
-        return Frame(chroma, bass)
+        return Frame(chroma, bass, freqs.toFloatArray(), mags.toFloatArray(), mag.copyOf(), sampleRate.toFloat() / size, max)
     }
 
     /** Итеративное БПФ по основанию 2. */

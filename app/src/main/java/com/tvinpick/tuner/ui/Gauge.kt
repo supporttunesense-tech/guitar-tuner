@@ -1,82 +1,122 @@
 package com.tvinpick.tuner.ui
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.ui.Modifier
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 
-private const val HALF_SWEEP = 65f // градусов в каждую сторону от центра
+private const val HALF_SWEEP = 50f // градусов в каждую сторону
+
+/** Центр и радиус дуги — экран кладёт ноту ровно под ней. */
+fun gaugeGeometry(w: Float, h: Float): Triple<Float, Float, Float> {
+    val cy = h * 0.80f
+    val r = min(w * 0.42f, cy * 0.98f)
+    return Triple(w / 2f, cy, r)
+}
 
 /**
- * Шкала ±50 центов со стрелкой.
- * @param cents уже сглаженное значение (анимируется снаружи)
+ * Минималистичная шкала ±50 центов: тонкая дуга, светящаяся отметка,
+ * мягкое свечение фона цветом состояния.
+ *
+ * @param cents сглаженное отклонение; [showMarker] = false прячет отметку (например, для аккорда)
+ * @param glow 0..1 — яркость свечения фона
+ * @param ripple 0..1 — волна «струна настроена» (0 — нет волны)
  */
 @Composable
 fun Gauge(
     cents: Float,
-    needleColor: Color,
-    active: Boolean,
+    color: Color,
+    showMarker: Boolean,
+    glow: Float,
+    ripple: Float,
     modifier: Modifier = Modifier,
 ) {
     Canvas(modifier) {
-        val radius = min(size.width / 2f, size.height) * 0.92f
-        val center = Offset(size.width / 2f, size.height * 0.98f)
-        val arcTopLeft = Offset(center.x - radius, center.y - radius)
-        val arcSize = Size(radius * 2, radius * 2)
-        val track = Color(0xFF2A323A)
+        val (cx, cy, r) = gaugeGeometry(size.width, size.height)
+        val u = density
+        fun angle(c: Float) = Math.toRadians((270f + c / 50f * HALF_SWEEP).toDouble())
+        fun point(c: Float, radius: Float): Offset {
+            val a = angle(c)
+            return Offset(cx + radius * cos(a).toFloat(), cy + radius * sin(a).toFloat())
+        }
+        val noteCenter = Offset(cx, cy - r * 0.40f)
 
-        // Фон шкалы
-        drawArc(
-            color = track, startAngle = 270f - HALF_SWEEP, sweepAngle = HALF_SWEEP * 2,
-            useCenter = false, topLeft = arcTopLeft, size = arcSize,
-            style = Stroke(width = 14f, cap = StrokeCap.Round)
-        )
-        // Зелёная зона ±5 центов
-        val greenHalf = HALF_SWEEP * 5f / 50f
-        drawArc(
-            color = TunerColors.Good.copy(alpha = if (active) 0.9f else 0.35f),
-            startAngle = 270f - greenHalf, sweepAngle = greenHalf * 2,
-            useCenter = false, topLeft = arcTopLeft, size = arcSize,
-            style = Stroke(width = 14f)
-        )
+        // Свечение фона
+        if (glow > 0f) {
+            drawCircle(
+                brush = Brush.radialGradient(
+                    listOf(color.copy(alpha = 0.22f * glow), color.copy(alpha = 0f)),
+                    center = noteCenter, radius = r * 1.15f
+                ),
+                radius = r * 1.15f, center = noteCenter
+            )
+        }
 
-        // Деления каждые 10 центов
-        for (c in -50..50 step 10) {
-            val a = Math.toRadians((270f + c / 50f * HALF_SWEEP).toDouble())
-            val long = c % 50 == 0
-            val r1 = radius - 26f
-            val r2 = radius - if (long) 58f else 44f
+        // Дорожка
+        val arcTopLeft = Offset(cx - r, cy - r)
+        val arcSize = Size(r * 2, r * 2)
+        drawArc(
+            color = Color.White.copy(alpha = 0.07f), startAngle = 270f - HALF_SWEEP, sweepAngle = HALF_SWEEP * 2,
+            useCenter = false, topLeft = arcTopLeft, size = arcSize,
+            style = Stroke(width = 3 * u, cap = StrokeCap.Round)
+        )
+        // Деления каждые 5 центов
+        for (c in -50..50 step 5) {
+            val zero = c == 0
+            val big = c % 25 == 0
+            val inner = r - (if (zero) 26 else if (big) 20 else 15) * u
             drawLine(
-                color = if (c == 0) TunerColors.Good else Color(0xFF55606B),
-                start = Offset(center.x + r1 * cos(a).toFloat(), center.y + r1 * sin(a).toFloat()),
-                end = Offset(center.x + r2 * cos(a).toFloat(), center.y + r2 * sin(a).toFloat()),
-                strokeWidth = if (c == 0) 6f else 4f,
+                color = when {
+                    zero -> TunerColors.Good
+                    big -> Color.White.copy(alpha = 0.35f)
+                    else -> Color.White.copy(alpha = 0.14f)
+                },
+                start = point(c.toFloat(), r - 10 * u),
+                end = point(c.toFloat(), inner),
+                strokeWidth = (if (zero) 2.5f else 1.4f) * u,
                 cap = StrokeCap.Round
             )
         }
 
-        // Стрелка
-        val clamped = cents.coerceIn(-50f, 50f)
-        val angle = Math.toRadians((270f + clamped / 50f * HALF_SWEEP).toDouble())
-        val tip = Offset(
-            center.x + (radius - 10f) * cos(angle).toFloat(),
-            center.y + (radius - 10f) * sin(angle).toFloat()
-        )
-        val color = if (active) needleColor else Color(0xFF4A535C)
-        drawLine(color = color, start = center, end = tip, strokeWidth = 10f, cap = StrokeCap.Round)
-        drawCircle(color = color, radius = 18f, center = center)
+        if (showMarker) {
+            val c = cents.coerceIn(-50f, 50f)
+            // Заливка дуги от центра до отметки
+            val start = 270f + minOf(0f, c) / 50f * HALF_SWEEP
+            val sweep = kotlin.math.abs(c) / 50f * HALF_SWEEP
+            if (sweep > 0.3f) {
+                drawArc(
+                    color = color, startAngle = start, sweepAngle = sweep, useCenter = false,
+                    topLeft = arcTopLeft, size = arcSize, style = Stroke(width = 3 * u, cap = StrokeCap.Round)
+                )
+            }
+            val m = point(c, r)
+            drawCircle(
+                brush = Brush.radialGradient(listOf(color.copy(alpha = 0.8f), color.copy(alpha = 0f)), center = m, radius = 22 * u),
+                radius = 22 * u, center = m
+            )
+            drawLine(color, point(c, r - 12 * u), point(c, r - 34 * u), strokeWidth = 2 * u, cap = StrokeCap.Round)
+            drawCircle(Color.White, radius = 5.5f * u, center = m)
+        }
 
-        // Метка «за шкалой», если отклонение больше 50 центов
-        if (active && abs(cents) > 50f) {
-            drawCircle(color = color, radius = 12f, center = tip)
+        // Волна «настроено»
+        if (ripple > 0f) {
+            val rr = (56 + 50 * ripple) * u
+            drawCircle(
+                color = TunerColors.Good.copy(alpha = 0.5f * (1f - ripple)),
+                radius = rr, center = noteCenter, style = Stroke(width = 2 * u)
+            )
+            drawCircle(
+                color = TunerColors.Good.copy(alpha = 0.25f * (1f - ripple)),
+                radius = rr * 1.25f, center = noteCenter, style = Stroke(width = 2 * u)
+            )
         }
     }
 }
