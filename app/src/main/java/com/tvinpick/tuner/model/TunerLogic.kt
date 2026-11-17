@@ -3,7 +3,8 @@ package com.tvinpick.tuner.model
 import kotlin.math.abs
 import kotlin.math.log2
 
-enum class Mode { GUITAR, CHROMATIC }
+/** TUNER — настройка инструмента, CHROMATIC — любая нота, CHORDS — аккорды. */
+enum class Mode { TUNER, CHROMATIC, CHORDS }
 
 sealed interface Warning {
     /** Струна перетянута — риск порвать. */
@@ -47,9 +48,9 @@ class TunerLogic {
         private const val WEAK_LEVEL = 0.006f
     }
 
-    var mode = Mode.GUITAR
+    var mode = Mode.TUNER
         set(value) { field = value; resetNote(); reading = Reading() }
-    var tuning: Tuning = TUNINGS[0]
+    var tuning: Tuning = INSTRUMENTS[0].tunings[0]
         set(value) { field = value; resetNote(); tunedStrings.clear(); reading = Reading() }
     /** null — автоопределение струны. */
     var manualString: Int? = null
@@ -114,7 +115,7 @@ class TunerLogic {
                 val (note, cents) = nearestNote(midi)
                 Reading(active = true, targetMidi = note, cents = cents, frequency = f)
             }
-            Mode.GUITAR -> guitarReading(midi, f)
+            else -> guitarReading(midi, f)
         }
 
         val inTune = abs(base.cents) < IN_TUNE_CENTS && base.warning == null
@@ -124,7 +125,7 @@ class TunerLogic {
             inTuneSince = -1L
         }
         val confirmed = inTune && now - inTuneSince >= CONFIRM_MS
-        if (confirmed && mode == Mode.GUITAR) base.stringIndex?.let { tunedStrings.add(it) }
+        if (confirmed && mode == Mode.TUNER) base.stringIndex?.let { tunedStrings.add(it) }
 
         reading = base.copy(inTune = inTune, confirmed = confirmed, weak = level < WEAK_LEVEL)
         return reading

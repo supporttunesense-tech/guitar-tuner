@@ -2,7 +2,7 @@ package com.tvinpick.tuner
 
 import com.tvinpick.tuner.audio.PitchDetector
 import com.tvinpick.tuner.model.Mode
-import com.tvinpick.tuner.model.TUNINGS
+import com.tvinpick.tuner.model.INSTRUMENTS
 import com.tvinpick.tuner.model.TunerLogic
 import com.tvinpick.tuner.model.Warning
 import org.junit.Assert.assertEquals
@@ -36,7 +36,7 @@ class TunerTest {
             doubleArrayOf(0.3, 1.0, 0.6, 0.3),
             doubleArrayOf(0.2, 0.3, 1.0, 0.5),
         )
-        for (m in TUNINGS.flatMap { it.notes }.distinct() + listOf(69, 81)) {
+        for (m in INSTRUMENTS.flatMap { i -> i.tunings.flatMap { it.notes } }.distinct().filter { it >= 36 } + listOf(69, 81)) {
             val f = midiToFreq(m)
             for (amps in spectra) {
                 val r = det.detect(tone(f, amps))
