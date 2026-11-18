@@ -67,6 +67,17 @@ private const val LABEL_R = 34f
 private const val LABEL_GAP = 10f
 
 object HeadArts {
+    val ACOUSTIC = HeadArt(
+        R.drawable.headstock_acoustic, left = 13f, right = 532f,
+        spots = listOf(
+            Spot(o(52, 460), 24f, -1, p(185.7f, 458.0f), p(193.0f, 652.0f), p(191.9f, 805.0f)),
+            Spot(o(52, 305), 27f, -1, p(186.2f, 302.0f), p(228.8f, 652.0f), p(225.6f, 805.0f)),
+            Spot(o(50, 150), 13f, -1, p(183.3f, 148.0f), p(261.7f, 652.0f), p(260.0f, 805.0f)),
+            Spot(o(495, 150), 532f, 1, p(370.3f, 148.0f), p(292.8f, 652.0f), p(294.9f, 805.0f)),
+            Spot(o(493, 305), 524f, 1, p(366.1f, 302.0f), p(325.6f, 652.0f), p(329.1f, 805.0f)),
+            Spot(o(495, 460), 527f, 1, p(369.2f, 458.0f), p(359.7f, 652.0f), p(362.2f, 805.0f))
+        )
+    )
     // Картинка доработана: добавлен седьмой колок справа, высокая E идёт на свой колок
     val SEVEN = HeadArt(
         R.drawable.headstock_seven, left = 79f, right = 438f,
@@ -170,7 +181,7 @@ fun artFor(inst: Instrument): HeadArt? = when (inst.shape) {
         "Виолончель" -> HeadArts.CELLO
         else -> HeadArts.VIOLIN
     }
-    HeadShape.ACOUSTIC -> if (inst.strings == 7) HeadArts.SEVEN else null
+    HeadShape.ACOUSTIC -> if (inst.strings == 7) HeadArts.SEVEN else HeadArts.ACOUSTIC
 }?.takeIf { it.spots.size == inst.strings }
 
 private fun labelCenter(s: Spot) = Offset(s.outer + s.dir * (LABEL_GAP + LABEL_R), s.knob.y)
