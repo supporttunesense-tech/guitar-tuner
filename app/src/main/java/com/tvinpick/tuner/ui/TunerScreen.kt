@@ -184,7 +184,6 @@ private fun display(state: UiState): Display {
         hint = if (r.weak) "Играй громче или поднеси телефон ближе" else "",
     )
 }
-}
 
 @Composable
 fun TunerScreen(state: UiState, vm: TunerViewModel) {
