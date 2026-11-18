@@ -29,4 +29,18 @@ object ReferenceTone {
         }
         return out
     }
+
+    /** «Резонанс»: короткий мягкий звон, когда струна настроена. */
+    fun renderChime(sampleRate: Int = 44100): FloatArray {
+        val seconds = 0.7f
+        val n = (sampleRate * seconds).toInt()
+        val partials = listOf(1318.5 to 1.0, 1975.5 to 0.45, 2637.0 to 0.25) // E6, B6, E7
+        return FloatArray(n) { i ->
+            val t = i.toDouble() / sampleRate
+            val attack = min(1.0, t / 0.004)
+            var s = 0.0
+            for ((f, a) in partials) s += a * sin(2 * PI * f * t) * exp(-t * (4.5 + f / 1500.0))
+            (0.18 * attack * s).toFloat()
+        }
+    }
 }

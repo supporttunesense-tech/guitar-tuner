@@ -9,9 +9,12 @@ import android.util.Log
 class TonePlayer {
     private var track: AudioTrack? = null
 
-    fun play(freq: Float) {
+    fun play(freq: Float) = playPcm(ReferenceTone.render(freq))
+
+    fun playChime() = playPcm(ReferenceTone.renderChime())
+
+    private fun playPcm(pcm: FloatArray) {
         stop()
-        val pcm = ReferenceTone.render(freq)
         try {
             val t = AudioTrack.Builder()
                 .setAudioAttributes(

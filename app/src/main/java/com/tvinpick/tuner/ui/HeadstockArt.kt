@@ -18,6 +18,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.runtime.remember
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
@@ -184,6 +186,15 @@ fun artFor(inst: Instrument): HeadArt? = when (inst.shape) {
     HeadShape.ACOUSTIC -> if (inst.strings == 7) HeadArts.SEVEN else HeadArts.ACOUSTIC
 }?.takeIf { it.spots.size == inst.strings }
 
+/** Зеркальная копия для левши: всё отражено по горизонтали. */
+private fun HeadArt.mirrored(width: Float): HeadArt {
+    fun m(p: Offset) = Offset(width - p.x, p.y)
+    return HeadArt(
+        res = res, left = width - right, right = width - left,
+        spots = spots.map { Spot(m(it.knob), width - it.outer, -it.dir, m(it.post), m(it.nut), m(it.bottom)) },
+    )
+}
+
 private fun labelCenter(s: Spot) = Offset(s.outer + s.dir * (LABEL_GAP + LABEL_R), s.knob.y)
 
 /** Как картинка ложится в область: масштаб и сдвиг. */
@@ -207,7 +218,7 @@ private fun fit(art: HeadArt, image: ImageBitmap, w: Float, h: Float): Fit {
  */
 @Composable
 fun HeadstockArt(
-    art: HeadArt,
+    sourceArt: HeadArt,
     tuning: Tuning,
     activeString: Int?,
     activeColor: Color,
@@ -216,8 +227,12 @@ fun HeadstockArt(
     onPegClick: (Int) -> Unit,
     onPegLongPress: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    lefty: Boolean = false,
 ) {
-    val image = ImageBitmap.imageResource(art.res)
+    val image = ImageBitmap.imageResource(sourceArt.res)
+    val art = remember(sourceArt, lefty, image.width) {
+        if (lefty) sourceArt.mirrored(image.width.toFloat()) else sourceArt
+    }
     val measurer = rememberTextMeasurer()
     val onClick by rememberUpdatedState(onPegClick)
     val onLong by rememberUpdatedState(onPegLongPress)
@@ -258,12 +273,17 @@ fun HeadstockArt(
                 )
             }
 
-            drawImage(
-                image,
-                dstOffset = IntOffset(f.dx.roundToInt(), f.dy.roundToInt()),
-                dstSize = IntSize((image.width * s).roundToInt(), (image.height * s).roundToInt()),
-                filterQuality = FilterQuality.High,
-            )
+            val dstW = (image.width * s).roundToInt()
+            val dstH = (image.height * s).roundToInt()
+            val pivot = Offset(f.dx + dstW / 2f, f.dy + dstH / 2f)
+            withTransform({ if (lefty) scale(-1f, 1f, pivot) }) {
+                drawImage(
+                    image,
+                    dstOffset = IntOffset(f.dx.roundToInt(), f.dy.roundToInt()),
+                    dstSize = IntSize(dstW, dstH),
+                    filterQuality = FilterQuality.High,
+                )
+            }
 
             // Подсветка струны: от колка через порожек вниз по грифу
             if (active != null) {
@@ -293,14 +313,15 @@ fun HeadstockArt(
                         r * 1.9f, c
                     )
                 }
-                drawCircle(Color(0xFF13252E), r, c)
+                val hc = TunerColors.highContrast
+                drawCircle(if (hc) Color.Black else Color(0xFF13252E), r, c)
                 val ring = when {
                     isActive -> activeColor
                     i == selectedString -> TunerColors.Text
                     tuned -> TunerColors.Good.copy(alpha = 0.6f)
-                    else -> Color(0xFF1F3540)
+                    else -> if (hc) Color.White.copy(alpha = 0.75f) else Color(0xFF1F3540)
                 }
-                drawCircle(ring, r, c, style = Stroke(width = (if (isActive || i == selectedString) 5f else 3f) * s))
+                drawCircle(ring, r, c, style = Stroke(width = (if (isActive || i == selectedString) 5f else 3f) * (if (hc) 1.6f else 1f) * s))
                 val color = when {
                     isActive -> activeColor
                     tuned -> TunerColors.Good
@@ -308,7 +329,7 @@ fun HeadstockArt(
                 }
                 val t = measurer.measure(
                     noteName(tuning.notes[i]),
-                    TextStyle(color = color, fontSize = (r / density).sp, fontWeight = FontWeight.Medium)
+                    TextStyle(color = color, fontSize = (r / density).sp, fontWeight = if (hc) FontWeight.Bold else FontWeight.Medium)
                 )
                 drawText(t, topLeft = Offset(c.x - t.size.width / 2f, c.y - t.size.height / 2f))
             }

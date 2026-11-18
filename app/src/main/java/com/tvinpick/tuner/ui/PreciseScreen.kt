@@ -73,6 +73,16 @@ fun PreciseScreen(state: UiState, vm: TunerViewModel) {
     val c = r.preciseCents
     val warning = if (active) r.warning else null
 
+    // Идеально — звон «резонанс» и вибрация (если включены)
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val isPerfect = active && r.perfect
+    LaunchedEffect(isPerfect) {
+        if (isPerfect) {
+            if (state.vibration) haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+            vm.onTuned()
+        }
+    }
+
     val toneColor = when {
         !active -> TunerColors.Dim
         warning == Warning.TooHigh -> TunerColors.Danger
@@ -103,15 +113,15 @@ fun PreciseScreen(state: UiState, vm: TunerViewModel) {
             ) { BackArrow(Modifier.size(18.dp)) }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("Точная настройка", color = TunerColors.Text, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(tr("Точная настройка", "Precise tuning"), color = TunerColors.Text, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                 Text(
-                    "${state.instrument.shortName} · ${state.tuning.name} (${state.tuning.notes.joinToString("") { noteName(it) }})",
+                    "${state.instrument.shortTitle()} · ${tuningTitle(state.tuning.name)} (${state.tuning.notes.joinToString("") { noteName(it) }})",
                     color = TunerColors.Dim, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
             }
             if (state.session.perfectStrings.isNotEmpty()) {
                 TextButton(onClick = vm::resetTuned) {
-                    Text("Сбросить ✓", color = TunerColors.Dim, fontSize = 13.sp, maxLines = 1, softWrap = false)
+                    Text(tr("Сбросить ✓", "Reset ✓"), color = TunerColors.Dim, fontSize = 13.sp, maxLines = 1, softWrap = false)
                 }
             }
         }
@@ -135,8 +145,8 @@ fun PreciseScreen(state: UiState, vm: TunerViewModel) {
         Text(
             when {
                 target == null -> " "
-                active -> "цель ${"%.2f".format(midiToFreq(target, state.a4.toFloat()))} Гц  ·  сейчас ${"%.2f".format(r.shownFreq)} Гц"
-                else -> "цель ${"%.2f".format(midiToFreq(target, state.a4.toFloat()))} Гц"
+                active -> tr("цель", "target") + " ${"%.2f".format(midiToFreq(target, state.a4.toFloat()))} " + tr("Гц", "Hz") + "  ·  " + tr("сейчас", "now") + " ${"%.2f".format(r.shownFreq)} " + tr("Гц", "Hz")
+                else -> tr("цель", "target") + " ${"%.2f".format(midiToFreq(target, state.a4.toFloat()))} " + tr("Гц", "Hz")
             },
             color = TunerColors.Dim, fontSize = 14.sp, textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
@@ -169,17 +179,17 @@ fun PreciseScreen(state: UiState, vm: TunerViewModel) {
 
         // Надпись
         val status = when {
-            state.playing != null -> "Эталон — слушай и подстраивай на слух" to TunerColors.Good
-            !active -> "Дёрни струну" to TunerColors.Dim
-            r.status == Status.TOO_HIGH -> "СТОП! Струна перетянута — ослабь" to TunerColors.Danger
-            r.status == Status.WRONG_WAY -> "Не в ту сторону! Крути колок обратно" to TunerColors.Far
-            r.status == Status.UNSURE -> "Не понимаю, какая струна — выбери её внизу" to TunerColors.Near
-            r.status == Status.OTHER_STRING -> "Похоже, звучит другая струна" to TunerColors.Far
-            r.perfect -> "Идеально ✓" to TunerColors.Good
-            abs(c) < TunerLogic.PERFECT_CENTS -> "Держи… почти идеально" to TunerColors.Good
-            abs(c) < 3f -> (if (c < 0) "Чуть-чуть подтяни ↑" else "Чуть-чуть ослабь ↓") to TunerColors.Near
-            c < 0 -> "Подтяни ↑" to TunerColors.Far
-            else -> "Ослабь ↓" to TunerColors.Far
+            state.playing != null -> tr("Эталон — слушай и подстраивай на слух", "Reference — listen and tune by ear") to TunerColors.Good
+            !active -> tr("Дёрни струну", "Pluck a string") to TunerColors.Dim
+            r.status == Status.TOO_HIGH -> tr("СТОП! Струна перетянута — ослабь", "STOP! String too tight — loosen it") to TunerColors.Danger
+            r.status == Status.WRONG_WAY -> tr("Не в ту сторону! Крути колок обратно", "Wrong way! Turn the peg back") to TunerColors.Far
+            r.status == Status.UNSURE -> tr("Не понимаю, какая струна — выбери её внизу", "Not sure which string — pick it below") to TunerColors.Near
+            r.status == Status.OTHER_STRING -> tr("Похоже, звучит другая струна", "Looks like another string") to TunerColors.Far
+            r.perfect -> tr("Идеально ✓", "Perfect ✓") to TunerColors.Good
+            abs(c) < TunerLogic.PERFECT_CENTS -> tr("Держи… почти идеально", "Hold… almost perfect") to TunerColors.Good
+            abs(c) < 3f -> (if (c < 0) tr("Чуть-чуть подтяни ↑", "Tighten a tiny bit ↑") else tr("Чуть-чуть ослабь ↓", "Loosen a tiny bit ↓")) to TunerColors.Near
+            c < 0 -> tr("Подтяни ↑", "Tighten ↑") to TunerColors.Far
+            else -> tr("Ослабь ↓", "Loosen ↓") to TunerColors.Far
         }
         val statusColor by animateColorAsState(status.second, tween(400), label = "preciseStatus")
         Crossfade(
@@ -200,11 +210,11 @@ fun PreciseScreen(state: UiState, vm: TunerViewModel) {
         Box(Modifier.fillMaxWidth().height(44.dp).padding(bottom = 4.dp), contentAlignment = Alignment.Center) {
             if (state.manualString != null) {
                 TextButton(onClick = { vm.selectString(null) }) {
-                    Text("Вернуть автовыбор струны", color = TunerColors.Good, fontSize = 13.sp, maxLines = 1)
+                    Text(tr("Вернуть автовыбор струны", "Back to auto string detection"), color = TunerColors.Good, fontSize = 13.sp, maxLines = 1)
                 }
             } else {
                 Text(
-                    "Нажми на струну — выбрать, удерживай — эталон",
+                    tr("Нажми на струну — выбрать, удерживай — эталон", "Tap a string to select, hold for reference"),
                     color = TunerColors.Dim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center
                 )
@@ -218,8 +228,10 @@ fun PreciseScreen(state: UiState, vm: TunerViewModel) {
 private fun StringButtons(state: UiState, activeString: Int?, vm: TunerViewModel) {
     val notes = state.tuning.notes
     val n = notes.size
+    // Левше струны показываем в обратном порядке, как он видит гриф
+    val order = if (state.lefty) (n - 1 downTo 0) else (0 until n)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        for (i in 0 until n) {
+        for (i in order) {
             val perfect = i in state.session.perfectStrings
             val isActive = i == activeString
             val selected = i == state.manualString

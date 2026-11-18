@@ -39,6 +39,16 @@ data class UiState(
     val playing: Int? = null,
     /** Открыт экран точной настройки. */
     val precise: Boolean = false,
+    /** Открыты настройки. */
+    val settingsOpen: Boolean = false,
+    // Настройки
+    val lefty: Boolean = false,
+    val chime: Boolean = true,
+    val vibration: Boolean = true,
+    val keepScreenOn: Boolean = true,
+    val highContrast: Boolean = false,
+    val english: Boolean = false,
+    val version: String = "",
 ) {
     val instrument: Instrument get() = INSTRUMENTS[instrumentIndex]
     /** Все строи инструмента; свой — последним. */
@@ -73,7 +83,24 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
         val a4 = prefs.getInt("a4", 440).coerceIn(A4_MIN, A4_MAX)
         val capo = prefs.getInt("capo", 0).coerceIn(0, CAPO_MAX)
         synchronized(session) { session.tuner.a4 = a4.toFloat() }
-        _state.value = UiState(a4 = a4, capo = capo)
+        // Язык по умолчанию — как в телефоне
+        val english = prefs.getBoolean("english", java.util.Locale.getDefault().language != "ru")
+        val contrast = prefs.getBoolean("contrast", false)
+        Lang.english = english
+        TunerColors.highContrast = contrast
+        val version = try {
+            app.packageManager.getPackageInfo(app.packageName, 0).versionName ?: ""
+        } catch (e: Exception) { "" }
+        _state.value = UiState(
+            a4 = a4, capo = capo,
+            lefty = prefs.getBoolean("lefty", false),
+            chime = prefs.getBoolean("chime", true),
+            vibration = prefs.getBoolean("vibration", true),
+            keepScreenOn = prefs.getBoolean("keep_screen_on", true),
+            highContrast = contrast,
+            english = english,
+            version = version,
+        )
         setInstrument(inst)
     }
 
@@ -146,6 +173,34 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
         val custom = Tuning("Свой строй", notes)
         _state.update { it.copy(custom = custom) }
         setTuning(st.instrument.tunings.size)
+    }
+
+    // ───── Настройки ─────
+    fun openSettings(open: Boolean) = _state.update { it.copy(settingsOpen = open) }
+
+    fun setLefty(on: Boolean) { prefs.edit().putBoolean("lefty", on).apply(); _state.update { it.copy(lefty = on) } }
+    fun setChime(on: Boolean) { prefs.edit().putBoolean("chime", on).apply(); _state.update { it.copy(chime = on) } }
+    fun setVibration(on: Boolean) { prefs.edit().putBoolean("vibration", on).apply(); _state.update { it.copy(vibration = on) } }
+    fun setKeepScreenOn(on: Boolean) { prefs.edit().putBoolean("keep_screen_on", on).apply(); _state.update { it.copy(keepScreenOn = on) } }
+
+    fun setHighContrast(on: Boolean) {
+        TunerColors.highContrast = on
+        prefs.edit().putBoolean("contrast", on).apply()
+        _state.update { it.copy(highContrast = on) }
+    }
+
+    fun setEnglish(on: Boolean) {
+        Lang.english = on
+        prefs.edit().putBoolean("english", on).apply()
+        _state.update { it.copy(english = on) }
+    }
+
+    /** Струна настроена — звон «резонанс», если включён. */
+    fun onTuned() {
+        if (!_state.value.chime || _state.value.playing != null) return
+        // Пока звенит — микрофон не слушаем, иначе тюнер услышит звон
+        muteUntil = SystemClock.elapsedRealtime() + 750
+        tone.playChime()
     }
 
     /** Точная настройка: без аккордов, только струны. */

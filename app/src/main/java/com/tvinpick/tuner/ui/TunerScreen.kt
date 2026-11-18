@@ -73,17 +73,24 @@ import androidx.compose.material3.AlertDialog
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 
+/**
+ * Цвета приложения. В режиме высокой контрастности (для яркого солнца) — чёрный фон,
+ * белый текст и насыщенные цвета без полутонов. Смена сразу перерисовывает экран.
+ */
 object TunerColors {
-    val Bg1 = Color(0xFF0B1A22)
-    val Bg2 = Color(0xFF08131A)
-    val Card = Color(0xFF11222B)
-    val CardBorder = Color(0xFF1D3440)
-    val Text = Color(0xFFEEF3F5)
-    val Dim = Color(0xFF8EA1AB)
-    val Good = Color(0xFF3DDC97)
-    val Near = Color(0xFFF1C40F)
-    val Far = Color(0xFFFF8A3D)
-    val Danger = Color(0xFFFF4D4D)
+    var highContrast by mutableStateOf(false)
+    private fun pick(normal: Long, contrast: Long) = Color(if (highContrast) contrast else normal)
+
+    val Bg1: Color get() = pick(0xFF0B1A22, 0xFF000000)
+    val Bg2: Color get() = pick(0xFF08131A, 0xFF000000)
+    val Card: Color get() = pick(0xFF11222B, 0xFF0A0A0A)
+    val CardBorder: Color get() = pick(0xFF1D3440, 0xFFFFFFFF)
+    val Text: Color get() = pick(0xFFEEF3F5, 0xFFFFFFFF)
+    val Dim: Color get() = pick(0xFF8EA1AB, 0xFFE0E0E0)
+    val Good: Color get() = pick(0xFF3DDC97, 0xFF00FF6A)
+    val Near: Color get() = pick(0xFFF1C40F, 0xFFFFE600)
+    val Far: Color get() = pick(0xFFFF8A3D, 0xFFFF8000)
+    val Danger: Color get() = pick(0xFFFF4D4D, 0xFFFF2020)
 }
 
 private fun chordName(c: Chord) = noteName(c.root) + c.type.suffix
@@ -109,8 +116,8 @@ private fun display(state: UiState): Display {
         val midi = state.tuning.notes[playing]
         return Display(
             main = noteName(midi), moving = false, lit = true, color = TunerColors.Good,
-            sub = "Эталон · ${"%.1f".format(midiToFreq(midi, state.a4.toFloat()))} Гц",
-            status = "Слушай и подстраивай на слух", statusColor = TunerColors.Good, hint = "",
+            sub = tr("Эталон", "Reference") + " · ${"%.1f".format(midiToFreq(midi, state.a4.toFloat()))} " + tr("Гц", "Hz"),
+            status = tr("Слушай и подстраивай на слух", "Listen and tune by ear"), statusColor = TunerColors.Good, hint = "",
         )
     }
     if (s.showChord) {
@@ -121,7 +128,7 @@ private fun display(state: UiState): Display {
             main = chordName(chord), moving = false, lit = true,
             color = if (s.chord.fresh) TunerColors.Good else TunerColors.Dim,
             sub = chord.notes.joinToString("  ·  ") { noteName(it) } +
-                if (state.capo > 0) "   (капо ${state.capo}, звучит ${chordName(sounding)})" else "",
+                if (state.capo > 0) tr("   (капо ${state.capo}, звучит ${chordName(sounding)})", "   (capo ${state.capo}, sounds ${chordName(sounding)})") else "",
             status = "", statusColor = TunerColors.Dim, hint = "",
         )
     }
@@ -132,11 +139,11 @@ private fun display(state: UiState): Display {
         val selected = state.manualString?.let { noteName(state.tuning.notes[it]) }
         return Display(
             main = selected ?: "–", moving = false, lit = false, color = TunerColors.Dim,
-            sub = if (state.chordsEnabled) "Дёрни струну или сыграй аккорд" else "Дёрни струну",
-            status = if (allDone) "Все струны настроены" else "",
+            sub = if (state.chordsEnabled) tr("Дёрни струну или сыграй аккорд", "Pluck a string or play a chord") else tr("Дёрни струну", "Pluck a string"),
+            status = if (allDone) tr("Все струны настроены", "All strings in tune") else "",
             statusColor = TunerColors.Good,
-            hint = if (s.stringsOld) "Струны быстро затихают — возможно, их пора поменять"
-            else "Удерживай кружок ноты — прозвучит эталон",
+            hint = if (s.stringsOld) tr("Струны быстро затихают — возможно, их пора поменять", "Strings fade fast — maybe time to change them")
+            else tr("Удерживай кружок ноты — прозвучит эталон", "Hold a note circle to hear the reference"),
         )
     }
     val warning = r.warning
@@ -145,10 +152,10 @@ private fun display(state: UiState): Display {
         // Не командуем «подтяни» наугад.
         return Display(
             main = "?", moving = false, lit = true, color = TunerColors.Near,
-            sub = "${"%.1f".format(r.frequency)} Гц",
-            status = "Не понимаю, какая это струна",
+            sub = "${"%.1f".format(r.frequency)} " + tr("Гц", "Hz"),
+            status = tr("Не понимаю, какая это струна", "Not sure which string this is"),
             statusColor = TunerColors.Near,
-            hint = "Нажми внизу на кружок струны, которую настраиваешь",
+            hint = tr("Нажми внизу на кружок струны, которую настраиваешь", "Tap the circle of the string you are tuning"),
         )
     }
     // Цвет и надпись берём из устойчивых значений логики: они не мелькают
@@ -158,17 +165,17 @@ private fun display(state: UiState): Display {
         Zone.FAR -> TunerColors.Far
     }
     val (status, statusColor) = when (r.status) {
-        Status.TOO_HIGH -> "СТОП! Струна перетянута — ослабь" to TunerColors.Danger
-        Status.WRONG_WAY -> "Не в ту сторону! Крути колок обратно" to TunerColors.Far
+        Status.TOO_HIGH -> tr("СТОП! Струна перетянута — ослабь", "STOP! String too tight — loosen it") to TunerColors.Danger
+        Status.WRONG_WAY -> tr("Не в ту сторону! Крути колок обратно", "Wrong way! Turn the peg back") to TunerColors.Far
         Status.OTHER_STRING -> {
             val other = (warning as? Warning.OtherString)?.index
-            (if (other != null) "Звучит ${n - other}-я струна (${noteName(state.tuning.notes[other])})"
-            else "Похоже, звучит другая струна") to TunerColors.Far
+            (if (other != null) tr("Звучит ", "Sounds like ") + stringLabel(n - other) + " (${noteName(state.tuning.notes[other])})"
+            else tr("Похоже, звучит другая струна", "Looks like another string")) to TunerColors.Far
         }
-        Status.TUNED -> "Настроено" to TunerColors.Good
-        Status.ALMOST -> "Почти… держи" to TunerColors.Good
-        Status.TIGHTEN -> "Подтяни ↑" to zoneColor
-        Status.LOOSEN -> "Ослабь ↓" to zoneColor
+        Status.TUNED -> tr("Настроено", "In tune") to TunerColors.Good
+        Status.ALMOST -> tr("Почти… держи", "Almost… hold") to TunerColors.Good
+        Status.TIGHTEN -> tr("Подтяни ↑", "Tighten ↑") to zoneColor
+        Status.LOOSEN -> tr("Ослабь ↓", "Loosen ↓") to zoneColor
         Status.UNSURE, null -> "" to TunerColors.Dim
     }
     val color = when (r.status) {
@@ -179,14 +186,18 @@ private fun display(state: UiState): Display {
     val cents = r.shownCents
     return Display(
         main = noteName(r.targetMidi ?: 0), moving = true, lit = true, color = color,
-        sub = "${"%.1f".format(r.shownFreq)} Гц  ·  ${if (cents > 0) "+" else if (cents < 0) "−" else ""}${abs(cents)} ¢",
+        sub = "${"%.1f".format(r.shownFreq)} " + tr("Гц", "Hz") + "  ·  ${if (cents > 0) "+" else if (cents < 0) "−" else ""}${abs(cents)} ¢",
         status = status, statusColor = statusColor,
-        hint = if (r.weak) "Играй громче или поднеси телефон ближе" else "",
+        hint = if (r.weak) tr("Играй громче или поднеси телефон ближе", "Play louder or move the phone closer") else "",
     )
 }
 
 @Composable
 fun TunerScreen(state: UiState, vm: TunerViewModel) {
+    if (state.settingsOpen) {
+        SettingsScreen(state, vm)
+        return
+    }
     if (state.precise) {
         PreciseScreen(state, vm)
         return
@@ -211,7 +222,8 @@ fun TunerScreen(state: UiState, vm: TunerViewModel) {
     val haptic = LocalHapticFeedback.current
     LaunchedEffect(r.confirmed) {
         if (r.confirmed) {
-            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            if (state.vibration) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            vm.onTuned()
             ripple.snapTo(0.001f)
             ripple.animateTo(1f, tween(900))
             ripple.snapTo(0f)
@@ -220,14 +232,14 @@ fun TunerScreen(state: UiState, vm: TunerViewModel) {
     // Опасность: вибрируем, пока струна перетянута; одиночный сигнал — если крутят не туда
     val danger = r.active && r.warning == Warning.TooHigh
     LaunchedEffect(danger) {
-        while (danger) {
+        while (danger && state.vibration) {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             delay(600)
         }
     }
     val wrongWay = r.active && r.warning == Warning.WrongWay
     LaunchedEffect(wrongWay) {
-        if (wrongWay) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        if (wrongWay && state.vibration) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
     }
 
     Column(
@@ -291,7 +303,7 @@ fun TunerScreen(state: UiState, vm: TunerViewModel) {
             if (art != null) {
                 // Фотореалистичная картинка инструмента
                 HeadstockArt(
-                    art = art,
+                    sourceArt = art,
                     tuning = state.tuning,
                     activeString = activeString,
                     activeColor = activeColor,
@@ -299,7 +311,8 @@ fun TunerScreen(state: UiState, vm: TunerViewModel) {
                     tunedStrings = state.session.tunedStrings,
                     onPegClick = onPeg,
                     onPegLongPress = onPegLong,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    lefty = state.lefty,
                 )
             } else {
                 // Акустика — рисованная головка
@@ -315,9 +328,15 @@ fun TunerScreen(state: UiState, vm: TunerViewModel) {
                     modifier = Modifier.fillMaxSize()
                 )
             }
+            // Солнце: высокая контрастность для яркого света
+            Box(Modifier.align(Alignment.TopEnd).padding(top = 6.dp)) {
+                RoundIconButton(size = 40, active = state.highContrast, onClick = { vm.setHighContrast(!state.highContrast) }) {
+                    SunIcon(Modifier.size(20.dp), if (state.highContrast) TunerColors.Good else TunerColors.Text)
+                }
+            }
             if (state.session.tunedStrings.isNotEmpty()) {
                 TextButton(onClick = vm::resetTuned, modifier = Modifier.align(Alignment.TopStart)) {
-                    Text("Сбросить ✓", color = TunerColors.Dim, fontSize = 12.sp)
+                    Text(tr("Сбросить ✓", "Reset ✓"), color = TunerColors.Dim, fontSize = 12.sp)
                 }
             }
         }
@@ -333,9 +352,9 @@ private fun TitleRow(state: UiState, vm: TunerViewModel) {
                     withStyle(SpanStyle(color = TunerColors.Text)) { append("Tune") }
                     withStyle(SpanStyle(color = TunerColors.Good)) { append("Sense") }
                 },
-                fontSize = 30.sp, fontWeight = FontWeight.Bold
+                fontSize = 26.sp, fontWeight = FontWeight.Bold
             )
-            Text("Тюнер для ${state.instrument.genitive}", color = TunerColors.Dim, fontSize = 13.sp)
+            Text(state.instrument.subtitle(), color = TunerColors.Dim, fontSize = 13.sp)
         }
         // Автонастройка: тюнер сам определяет струну
         val auto = state.manualString == null
@@ -347,7 +366,7 @@ private fun TitleRow(state: UiState, vm: TunerViewModel) {
                 .padding(start = 14.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Автонастройка", color = TunerColors.Text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Text(tr("Автонастройка", "Auto"), color = TunerColors.Text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
             Switch(
                 checked = auto,
                 onCheckedChange = { on ->
@@ -365,6 +384,11 @@ private fun TitleRow(state: UiState, vm: TunerViewModel) {
                 )
             )
         }
+        Spacer(Modifier.width(8.dp))
+        // Шестерёнка — настройки
+        RoundIconButton(size = 38, onClick = { vm.openSettings(true) }) {
+            GearIcon(Modifier.size(20.dp))
+        }
     }
 }
 
@@ -377,41 +401,25 @@ private fun Pickers(state: UiState, vm: TunerViewModel) {
     ) {
         Box(Modifier.weight(1f)) {
             var open by remember { mutableStateOf(false) }
-            Pill(onClick = { open = true }, icon = true, text = state.instrument.shortName)
+            Pill(onClick = { open = true }, icon = true, text = state.instrument.shortTitle())
             DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                 INSTRUMENTS.forEachIndexed { i, inst ->
-                    MenuItem(inst.name, i == state.instrumentIndex) { open = false; vm.setInstrument(i) }
+                    MenuItem(inst.title(), i == state.instrumentIndex) { open = false; vm.setInstrument(i) }
                 }
             }
         }
         Box(Modifier.weight(1f)) {
             var open by remember { mutableStateOf(false) }
             val t = state.tuning
-            val short = if (t.name.startsWith("Стандарт")) "Стандарт" else t.name
+            val short = if (t.name.startsWith("Стандарт")) tr("Стандарт", "Standard") else tuningTitle(t.name)
             Pill(onClick = { open = true }, icon = false, text = "$short (${t.notes.joinToString("") { noteName(it) }})")
             var editCustom by remember { mutableStateOf(false) }
             DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                 state.tunings.forEachIndexed { i, tuning ->
-                    MenuItem("${tuning.name}   ${tuning.label}", i == state.tuningIndex) { open = false; vm.setTuning(i) }
+                    MenuItem("${tuningTitle(tuning.name)}   ${tuning.label}", i == state.tuningIndex) { open = false; vm.setTuning(i) }
                 }
-                MenuItem(if (state.custom != null) "Изменить свой строй…" else "Свой строй…", false) {
+                MenuItem(if (state.custom != null) tr("Изменить свой строй…", "Edit custom tuning…") else tr("Свой строй…", "Custom tuning…"), false) {
                     open = false; editCustom = true
-                }
-                HorizontalDivider(color = TunerColors.CardBorder)
-                StepperRow(
-                    title = "Каподастр",
-                    value = if (state.capo == 0) "нет" else "${state.capo} лад",
-                    onMinus = { vm.setCapo(state.capo - 1) },
-                    onPlus = { vm.setCapo(state.capo + 1) },
-                )
-                StepperRow(
-                    title = "Камертон A4",
-                    value = "${state.a4} Гц",
-                    onMinus = { vm.setA4(state.a4 - 1) },
-                    onPlus = { vm.setA4(state.a4 + 1) },
-                )
-                if (state.a4 != 440) {
-                    MenuItem("Вернуть 440 Гц", false) { vm.setA4(440) }
                 }
             }
             if (editCustom) {
@@ -463,7 +471,7 @@ private fun CustomTuningDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = TunerColors.Card,
-        title = { Text("Свой строй", color = TunerColors.Text) },
+        title = { Text(tr("Свой строй", "Custom tuning"), color = TunerColors.Text) },
         text = {
             Column {
                 // Сверху тонкая струна, как смотришь на гриф
@@ -471,7 +479,7 @@ private fun CustomTuningDialog(
                     val m = notes[i]
                     val range = customRange(standard[i])
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("${n - i}-я", color = TunerColors.Dim, fontSize = 14.sp, modifier = Modifier.width(40.dp))
+                        Text(tr("${n - i}-я", "${n - i}"), color = TunerColors.Dim, fontSize = 14.sp, modifier = Modifier.width(40.dp))
                         TextButton(
                             onClick = { notes = notes.toMutableList().also { it[i] = m - 1 } },
                             enabled = m - 1 in range
@@ -485,22 +493,22 @@ private fun CustomTuningDialog(
                             enabled = m + 1 in range
                         ) { Text("+", fontSize = 18.sp) }
                         if (m > standard[i]) {
-                            Text("выше нормы", color = TunerColors.Far, fontSize = 12.sp)
+                            Text(tr("выше нормы", "above std"), color = TunerColors.Far, fontSize = 12.sp)
                         }
                     }
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Выше стандарта больше чем на 3 полутона нельзя — струна может порваться.",
+                    tr("Выше стандарта больше чем на 3 полутона нельзя — струна может порваться.", "No more than 3 semitones above standard — the string may break."),
                     color = TunerColors.Dim, fontSize = 12.sp
                 )
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(notes) }) { Text("Сохранить", color = TunerColors.Good) } },
+        confirmButton = { TextButton(onClick = { onSave(notes) }) { Text(tr("Сохранить", "Save"), color = TunerColors.Good) } },
         dismissButton = {
             Row {
-                TextButton(onClick = { notes = standard }) { Text("Как стандарт", color = TunerColors.Dim) }
-                TextButton(onClick = onDismiss) { Text("Отмена", color = TunerColors.Dim) }
+                TextButton(onClick = { notes = standard }) { Text(tr("Как стандарт", "Standard"), color = TunerColors.Dim) }
+                TextButton(onClick = onDismiss) { Text(tr("Отмена", "Cancel"), color = TunerColors.Dim) }
             }
         },
     )
@@ -586,17 +594,17 @@ fun PermissionScreen(openSettings: Boolean, onRequest: () -> Unit) {
         )
         Spacer(Modifier.height(20.dp))
         Text(
-            "Тюнеру нужен микрофон, чтобы слышать инструмент.\nЗвук никуда не записывается и не отправляется.",
+            tr("Тюнеру нужен микрофон, чтобы слышать инструмент.\nЗвук никуда не записывается и не отправляется.", "The tuner needs the microphone to hear your instrument.\nSound is never recorded or sent anywhere."),
             color = TunerColors.Text, fontSize = 16.sp, textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(24.dp))
         Button(onClick = onRequest) {
-            Text(if (openSettings) "Открыть настройки" else "Разрешить микрофон")
+            Text(if (openSettings) tr("Открыть настройки", "Open settings") else tr("Разрешить микрофон", "Allow microphone"))
         }
         if (openSettings) {
             Spacer(Modifier.height(12.dp))
             Text(
-                "В настройках: Разрешения → Микрофон → Разрешить",
+                tr("В настройках: Разрешения → Микрофон → Разрешить", "In settings: Permissions → Microphone → Allow"),
                 color = TunerColors.Dim, fontSize = 14.sp, textAlign = TextAlign.Center
             )
         }

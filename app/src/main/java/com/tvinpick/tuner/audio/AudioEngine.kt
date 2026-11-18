@@ -70,7 +70,7 @@ class AudioEngine(
         Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
         val opened = open()
         if (opened == null) {
-            onError("Не удалось открыть микрофон")
+            onError(com.tvinpick.tuner.ui.tr("Не удалось открыть микрофон", "Could not open the microphone"))
             running = false
             return
         }
@@ -82,7 +82,7 @@ class AudioEngine(
         try {
             record.startRecording()
             if (record.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
-                onError("Микрофон занят другим приложением")
+                onError(com.tvinpick.tuner.ui.tr("Микрофон занят другим приложением", "Microphone is busy in another app"))
                 running = false
                 return
             }
@@ -94,7 +94,7 @@ class AudioEngine(
                     } else {
                         record.read(shorts, read, HOP - read, AudioRecord.READ_BLOCKING)
                     }
-                    if (n < 0) { onError("Ошибка чтения микрофона"); running = false; break }
+                    if (n < 0) { onError(com.tvinpick.tuner.ui.tr("Ошибка чтения микрофона", "Microphone read error")); running = false; break }
                     read += n
                 }
                 if (!running) break
@@ -113,7 +113,7 @@ class AudioEngine(
             }
         } catch (e: Exception) {
             Log.e("TuneSense", "Ошибка микрофона", e)
-            onError("Ошибка микрофона")
+            onError(com.tvinpick.tuner.ui.tr("Ошибка микрофона", "Microphone error"))
             running = false
         } finally {
             try { record.stop() } catch (_: Exception) {}
