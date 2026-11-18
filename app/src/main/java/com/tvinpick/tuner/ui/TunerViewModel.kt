@@ -37,6 +37,8 @@ data class UiState(
     val capo: Int = 0,
     /** Какая струна сейчас звучит эталоном. */
     val playing: Int? = null,
+    /** Открыт экран точной настройки. */
+    val precise: Boolean = false,
 ) {
     val instrument: Instrument get() = INSTRUMENTS[instrumentIndex]
     /** Все строи инструмента; свой — последним. */
@@ -85,7 +87,7 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
         val a = SoundAnalyzer(inst, AudioEngine.SAMPLE_RATE, AudioEngine.BUFFER)
         analyzer = a
         synchronized(session) {
-            session.chordsEnabled = a.chordsEnabled
+            session.chordsEnabled = a.chordsEnabled && !_state.value.precise
             session.healthEnabled = inst.shape == HeadShape.ACOUSTIC
             session.tuner.tuning = tuning
             session.tuner.manualString = null
@@ -146,6 +148,14 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
         setTuning(st.instrument.tunings.size)
     }
 
+    /** Точная настройка: без аккордов, только струны. */
+    fun setPrecise(on: Boolean) {
+        synchronized(session) {
+            session.chordsEnabled = !on && analyzer.chordsEnabled
+        }
+        _state.update { it.copy(precise = on, session = it.session.copy(showChord = false)) }
+    }
+
     fun setCapo(fret: Int) {
         val capo = fret.coerceIn(0, CAPO_MAX)
         prefs.edit().putInt("capo", capo).apply()
@@ -175,8 +185,11 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun resetTuned() {
-        synchronized(session) { session.tuner.tunedStrings.clear() }
-        _state.update { it.copy(session = it.session.copy(tunedStrings = emptySet())) }
+        synchronized(session) {
+            session.tuner.tunedStrings.clear()
+            session.tuner.perfectStrings.clear()
+        }
+        _state.update { it.copy(session = it.session.copy(tunedStrings = emptySet(), perfectStrings = emptySet())) }
     }
 
     fun setA4(value: Int) {

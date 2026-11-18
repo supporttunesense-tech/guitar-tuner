@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -121,8 +122,7 @@ private fun display(state: UiState): Display {
             color = if (s.chord.fresh) TunerColors.Good else TunerColors.Dim,
             sub = chord.notes.joinToString("  ·  ") { noteName(it) } +
                 if (state.capo > 0) "   (капо ${state.capo}, звучит ${chordName(sounding)})" else "",
-            status = s.chord.history.takeLast(5).joinToString("  →  ") { chordName(shapeOf(it, state.capo)) },
-            statusColor = TunerColors.Dim, hint = "",
+            status = "", statusColor = TunerColors.Dim, hint = "",
         )
     }
     val error = state.error
@@ -187,6 +187,10 @@ private fun display(state: UiState): Display {
 
 @Composable
 fun TunerScreen(state: UiState, vm: TunerViewModel) {
+    if (state.precise) {
+        PreciseScreen(state, vm)
+        return
+    }
     val d = display(state)
     val r = state.session.reading
 
@@ -366,7 +370,11 @@ private fun TitleRow(state: UiState, vm: TunerViewModel) {
 
 @Composable
 private fun Pickers(state: UiState, vm: TunerViewModel) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Box(Modifier.weight(1f)) {
             var open by remember { mutableStateOf(false) }
             Pill(onClick = { open = true }, icon = true, text = state.instrument.shortName)
@@ -415,6 +423,16 @@ private fun Pickers(state: UiState, vm: TunerViewModel) {
                 )
             }
         }
+        // Точная настройка
+        Box(
+            Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(TunerColors.Card)
+                .border(1.dp, TunerColors.CardBorder, CircleShape)
+                .clickable { vm.setPrecise(true) },
+            contentAlignment = Alignment.Center
+        ) { TargetIcon(Modifier.size(22.dp)) }
     }
 }
 

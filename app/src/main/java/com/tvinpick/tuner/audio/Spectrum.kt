@@ -72,30 +72,55 @@ class Spectrum(val sampleRate: Int, val size: Int = 16384, val length: Int = siz
         if (maxMag <= 0f) return f0
         val est = ArrayList<Float>(10)
         val wts = ArrayList<Float>(10)
+        val ks = ArrayList<Int>(10)
         var k = 1
         while (k <= 10 && f0 * k < 2500f) {
             val p = peakNear(f0 * k, 35f)
             if (p != null && p.second > maxMag * 0.04f) {
                 est += p.first / k
-                // Нижние обертоны важнее: у верхних струна «звенит» чуть выше (негармоничность)
-                wts += sqrt(p.second) / k
+                wts += sqrt(p.second)
+                ks += k
             }
             k++
         }
         if (est.isEmpty()) return f0
-        // Взвешенная медиана — устойчива к одному-двум «чужим» пикам
-        val order = est.indices.sortedBy { est[it] }
-        val half = wts.sum() / 2f
-        var acc = 0f
-        for (i in order) {
-            acc += wts[i]
-            if (acc >= half) {
-                val r = est[i]
-                // Если уточнение ушло далеко — значит, не нашли свои пики; оставляем грубую оценку
-                return if (abs(1200f * log2(r / f0)) < 60f) r else f0
+        // Взвешенная медиана (нижние обертоны важнее) — устойчива к «чужим» пикам
+        val med = weightedMedian(est, est.indices.map { wts[it] / ks[it] })
+        if (abs(1200f * log2(med / f0)) >= 60f) return f0
+
+        // Негармоничность: у настоящей струны k-й обертон чуть выше k·f0, примерно
+        // f_k/k = f0·(1 + B·k²/2). Проводим прямую по k² и берём f0 там, где k² = 0 —
+        // это настоящий основной тон, даже если сам он звучит слабо (телефонный микрофон).
+        val keep = est.indices.filter { abs(1200f * log2(est[it] / med)) < 8f }
+        if (keep.map { ks[it] }.distinct().size >= 3) {
+            var sw = 0.0; var sx = 0.0; var sy = 0.0
+            for (i in keep) { val w = wts[i].toDouble(); sw += w; sx += w * ks[i] * ks[i]; sy += w * est[i] }
+            val mx = sx / sw
+            val my = sy / sw
+            var sxx = 0.0; var sxy = 0.0
+            for (i in keep) {
+                val w = wts[i].toDouble(); val dx = ks[i] * ks[i] - mx
+                sxx += w * dx * dx; sxy += w * dx * (est[i] - my)
+            }
+            if (sxx > 0) {
+                val slope = sxy / sxx
+                val f = (my - slope * mx).toFloat()
+                // Негармоничность бывает только «вверх»; и поправка не больше пары центов
+                if (slope >= 0 && abs(1200f * log2(f / med)) < 4f) return f
             }
         }
-        return f0
+        return med
+    }
+
+    private fun weightedMedian(values: List<Float>, weights: List<Float>): Float {
+        val order = values.indices.sortedBy { values[it] }
+        val half = weights.sum() / 2f
+        var acc = 0f
+        for (i in order) {
+            acc += weights[i]
+            if (acc >= half) return values[i]
+        }
+        return values[order.last()]
     }
 
     /** Итеративное БПФ по основанию 2. */

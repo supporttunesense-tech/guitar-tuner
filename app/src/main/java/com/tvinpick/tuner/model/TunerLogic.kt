@@ -42,6 +42,10 @@ data class Reading(
     /** Цифры для показа: обновляются ~4 раза в секунду, чтобы их можно было прочитать. */
     val shownCents: Int = 0,
     val shownFreq: Float = 0f,
+    /** Для точного режима: отклонение с сильным сглаживанием (десятые цента не скачут). */
+    val preciseCents: Float = 0f,
+    /** Идеально: в пределах ±1 цента не меньше секунды. */
+    val perfect: Boolean = false,
 )
 
 /**
@@ -73,11 +77,17 @@ class TunerLogic {
         private const val NUMBERS_EVERY = 5        // цифры — раз в 5 кадров (~4 раза в секунду)
         private const val WEAK_ON_FRAMES = 20      // «играй громче» — если тихо ~1 с
         private const val WEAK_OFF_FRAMES = 25
+        // Точный режим
+        private const val PRECISE_SMOOTH = 0.12f     // ~0,4 с — десятые цента читаются
+        const val PERFECT_CENTS = 1.0f
+        private const val PERFECT_LEAVE_CENTS = 2.0f
+        private const val PERFECT_MS = 1000L
+        private const val PRECISE_SKIP_MS = 250L
         private const val CONTINUITY_CENTS = 150f
     }
 
     var tuning: Tuning = INSTRUMENTS[0].tunings[0]
-        set(value) { field = value; resetNote(); forget(); tunedStrings.clear(); reading = Reading() }
+        set(value) { field = value; resetNote(); forget(); tunedStrings.clear(); perfectStrings.clear(); reading = Reading() }
     /** null — автоопределение струны. */
     var manualString: Int? = null
         set(value) { field = value; resetNote(); forget(); reading = Reading() }
@@ -85,6 +95,8 @@ class TunerLogic {
         set(value) { field = value; resetNote() }
 
     val tunedStrings = mutableSetOf<Int>()
+    /** Струны, настроенные идеально (±1 цент). */
+    val perfectStrings = mutableSetOf<Int>()
     var reading = Reading()
         private set
 
@@ -116,6 +128,10 @@ class TunerLogic {
     private var weakFrames = 0
     private var loudFrames = 0
     private var weakShown = false
+    private var precise = Float.NaN
+    private var preciseN = 0
+    private var perfectSince = -1L
+    private var perfect = false
     // Какую струну строили последней — чтобы после паузы не «перепрыгнуть» на соседнюю
     private var lockedAt = 0L
     private var lockFromMemory = false
@@ -148,6 +164,7 @@ class TunerLogic {
         smooth = Float.NaN; smoothString = null; zone = Zone.FAR; stickyTuned = false; nearSince = -1L
         shownStatus = null; pendingStatus = null; frameNo = 0
         weakFrames = 0; loudFrames = 0; weakShown = false
+        precise = Float.NaN; preciseN = 0; perfectSince = -1L; perfect = false
     }
 
     private fun median(): Float = history.sorted()[history.size / 2]
@@ -198,10 +215,33 @@ class TunerLogic {
         // 1) Сглаживаем отклонение — стрелка и цвет не дрожат от мелких колебаний
         if (smooth.isNaN() || smoothString != base.stringIndex) {
             smooth = base.cents; smoothString = base.stringIndex
+            precise = Float.NaN; preciseN = 0; perfect = false; perfectSince = -1L
         } else {
             smooth += SMOOTH * (base.cents - smooth)
         }
         val c = abs(smooth)
+
+        // Точный режим: сглаживаем сильнее и судим строже
+        // Атаку щипка (первые 0,25 с высота чуть завышена) не учитываем; потом сначала
+        // простое среднее, чтобы быстро «встать», дальше — плавное сглаживание
+        if (noteStartAt >= 0 && now - noteStartAt < PRECISE_SKIP_MS) {
+            precise = Float.NaN; preciseN = 0
+        } else {
+            preciseN++
+            val alpha = maxOf(PRECISE_SMOOTH, 1f / preciseN)
+            precise = if (precise.isNaN()) base.cents else precise + alpha * (base.cents - precise)
+        }
+        val pc = if (precise.isNaN()) Float.MAX_VALUE else abs(precise)
+        if (base.warning != null) {
+            perfect = false; perfectSince = -1L
+        } else if (pc < PERFECT_CENTS) {
+            if (perfectSince < 0) perfectSince = now
+            if (now - perfectSince >= PERFECT_MS) perfect = true
+        } else {
+            perfectSince = -1L
+            if (pc > PERFECT_LEAVE_CENTS) perfect = false
+        }
+        if (perfect) base.stringIndex?.let { perfectStrings.add(it) }
 
         // 2) Цвет с «запасом»: войти в зелёное — ближе 5 центов, выйти — дальше 8
         zone = when (zone) {
@@ -274,6 +314,8 @@ class TunerLogic {
             status = shownStatus,
             shownCents = shownCents,
             shownFreq = shownFreq,
+            preciseCents = if (precise.isNaN()) smooth else precise,
+            perfect = perfect,
         )
         return reading
     }

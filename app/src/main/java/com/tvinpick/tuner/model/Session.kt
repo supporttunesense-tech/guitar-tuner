@@ -12,6 +12,8 @@ data class SessionState(
     val tunedStrings: Set<Int> = emptySet(),
     /** Струны быстро затихают — возможно, пора менять. */
     val stringsOld: Boolean = false,
+    /** Струны, настроенные идеально (точный режим). */
+    val perfectStrings: Set<Int> = emptySet(),
 )
 
 /**
@@ -72,6 +74,9 @@ class Session {
         if (healthEnabled) {
             health.process(level, if (reading.active && !chordish) reading.stringIndex else null, noiseFloor, now)
         }
-        return SessionState(reading, chord, showChord, tuner.tunedStrings.toSet(), healthEnabled && health.looksOld)
+        return SessionState(
+            reading, chord, showChord, tuner.tunedStrings.toSet(), healthEnabled && health.looksOld,
+            tuner.perfectStrings.toSet()
+        )
     }
 }
