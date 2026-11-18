@@ -1,11 +1,8 @@
 package com.tvinpick.tuner.audio
 
-import kotlin.math.PI
 import kotlin.math.abs
-import kotlin.math.cos
 import kotlin.math.log2
 import kotlin.math.roundToInt
-import kotlin.math.sin
 import kotlin.math.sqrt
 
 enum class ChordType(val suffix: String, val intervals: IntArray) {
@@ -32,18 +29,18 @@ data class ChordMatch(val chord: Chord, val score: Float)
  * → сравнение с шаблонами аккордов.
  */
 class ChordDetector(private val sampleRate: Int, val size: Int = 16384) {
-    private val window = FloatArray(size) { (0.5 - 0.5 * cos(2 * PI * it / (size - 1))).toFloat() }
-    private val re = FloatArray(size)
-    private val im = FloatArray(size)
-    private val mag = FloatArray(size / 2)
-    private val cosT = FloatArray(size / 2) { cos(-2 * PI * it / size).toFloat() }
-    private val sinT = FloatArray(size / 2) { sin(-2 * PI * it / size).toFloat() }
+    /** Свой спектр — для тестов; в приложении спектр общий с тюнером. */
+    private val own = Spectrum(sampleRate, size)
 
     class Frame(
+        /** 12 нот для распознавания аккорда (до [CHORD_MAX_HZ]). */
         val chroma: FloatArray,
+        /** 12 нот по более широкому диапазону — чтобы понять, сколько нот звучит. */
+        private val chromaWide: FloatArray,
         val bass: Int,
         private val peakFreqs: FloatArray,
         private val peakMags: FloatArray,
+        // Ссылка на общий спектр (без копии — кадр используется сразу же, в том же потоке)
         private val spectrum: FloatArray,
         private val binHz: Float,
         private val maxMag: Float,
@@ -63,8 +60,8 @@ class ChordDetector(private val sampleRate: Int, val size: Int = 16384) {
         /** Сколько разных нот заметно звучит. */
         val noteCount: Int
             get() {
-                val max = chroma.max()
-                return chroma.count { it > max * 0.3f }
+                val max = chromaWide.max()
+                return chromaWide.count { it > max * 0.3f }
             }
 
         /**
@@ -86,10 +83,13 @@ class ChordDetector(private val sampleRate: Int, val size: Int = 16384) {
 
     /** Хромаграмма кадра или null, если ничего не звучит. */
     fun analyze(samples: FloatArray): Frame? {
-        for (i in 0 until size) { re[i] = samples[i] * window[i]; im[i] = 0f }
-        fft()
-        for (k in 0 until size / 2) mag[k] = sqrt(re[k] * re[k] + im[k] * im[k])
+        own.compute(samples)
+        return analyze(own)
+    }
 
+    /** То же по уже посчитанному спектру. */
+    fun analyze(spectrum: Spectrum): Frame? {
+        val mag = spectrum.mag
         val lo = (MIN_HZ * size / sampleRate).toInt()
         val hi = (MAX_HZ * size / sampleRate).toInt()
         var max = 0f
@@ -97,6 +97,7 @@ class ChordDetector(private val sampleRate: Int, val size: Int = 16384) {
         if (max <= 0f) return null
 
         val chroma = FloatArray(12)
+        val chromaWide = FloatArray(12)
         var bass = -1
         val freqs = ArrayList<Float>()
         val mags = ArrayList<Float>()
@@ -109,54 +110,22 @@ class ChordDetector(private val sampleRate: Int, val size: Int = 16384) {
                 val shift = if (d != 0f) 0.5f * (a - c) / d else 0f
                 val freq = (k + shift) * sampleRate / size
                 val pc = ((69f + 12f * log2(freq / 440f)).roundToInt() % 12 + 12) % 12
-                chroma[pc] += sqrt(b)
+                chromaWide[pc] += sqrt(b)
+                // Выше ~700 Гц много обертонов (у высокой E третий — это B): для названия аккорда не берём
+                if (freq <= CHORD_MAX_HZ) chroma[pc] += sqrt(b)
                 if (bass < 0) bass = pc
                 freqs.add(freq)
                 mags.add(b)
             }
         }
         if (bass < 0) return null
-        return Frame(chroma, bass, freqs.toFloatArray(), mags.toFloatArray(), mag.copyOf(), sampleRate.toFloat() / size, max)
-    }
-
-    /** Итеративное БПФ по основанию 2. */
-    private fun fft() {
-        val n = size
-        var j = 0
-        for (i in 1 until n) {
-            var bit = n shr 1
-            while (j and bit != 0) { j = j xor bit; bit = bit shr 1 }
-            j = j xor bit
-            if (i < j) {
-                var t = re[i]; re[i] = re[j]; re[j] = t
-                t = im[i]; im[i] = im[j]; im[j] = t
-            }
-        }
-        var len = 2
-        while (len <= n) {
-            val half = len / 2
-            val step = n / len
-            var i = 0
-            while (i < n) {
-                for (k in 0 until half) {
-                    val wr = cosT[k * step]
-                    val wi = sinT[k * step]
-                    val p = i + k
-                    val q = p + half
-                    val xr = re[q] * wr - im[q] * wi
-                    val xi = re[q] * wi + im[q] * wr
-                    re[q] = re[p] - xr; im[q] = im[p] - xi
-                    re[p] += xr; im[p] += xi
-                }
-                i += len
-            }
-            len = len shl 1
-        }
+        return Frame(chroma, chromaWide, bass, freqs.toFloatArray(), mags.toFloatArray(), mag, sampleRate.toFloat() / size, max)
     }
 
     companion object {
         private const val MIN_HZ = 60f
         private const val MAX_HZ = 1000f
+        const val CHORD_MAX_HZ = 700f
         private const val PEAK_REL = 0.08f
         private const val EXTRA_NOTE_PENALTY = 0.03f
         private const val POWER_PENALTY = 0.05f

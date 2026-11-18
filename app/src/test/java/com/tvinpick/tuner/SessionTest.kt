@@ -90,7 +90,7 @@ class SessionTest {
             t += 46
             st
         }
-        var st = feed(sound(chords.getValue("Am"), 1), 6)
+        var st = feed(sound(chords.getValue("Am"), 1), 12)
         assertTrue("должен показываться аккорд", st.showChord)
         assertEquals("Am", noteName(st.chord.chord!!.root) + st.chord.chord!!.type.suffix)
 

@@ -53,13 +53,16 @@ class TunerLogic {
         private const val TREND_SKIP_MS = 300L
         private const val TREND_CENTS = 15f
         private const val WRONG_WAY_SHOW_MS = 1500L
+        /** Сколько помним последнюю струну: человек дёргает её снова, пока крутит колок. */
+        const val CONTINUITY_MS = 8000L
+        private const val CONTINUITY_CENTS = 150f
     }
 
     var tuning: Tuning = INSTRUMENTS[0].tunings[0]
-        set(value) { field = value; resetNote(); tunedStrings.clear(); reading = Reading() }
+        set(value) { field = value; resetNote(); forget(); tunedStrings.clear(); reading = Reading() }
     /** null — автоопределение струны. */
     var manualString: Int? = null
-        set(value) { field = value; resetNote(); reading = Reading() }
+        set(value) { field = value; resetNote(); forget(); reading = Reading() }
     var a4 = 440f
         set(value) { field = value; resetNote() }
 
@@ -79,8 +82,23 @@ class TunerLogic {
     private var refTime = 0L
     private var refCents = Float.NaN
     private var wrongUntil = 0L
+    // Какую струну строили последней — чтобы после паузы не «перепрыгнуть» на соседнюю
+    private var lockedAt = 0L
+    private var lockFromMemory = false
+    private var lastMidi = 0f
+    private var memString: Int? = null
+    private var memMidi = 0f
+    private var memAt = 0L
+    private var memTrusted = false
+
+    /** Забыть последнюю струну (сменили строй или выбор струны). */
+    private fun forget() { memString = null }
 
     private fun resetNote() {
+        val locked = lockedString
+        if (locked != null && history.isNotEmpty()) {
+            memString = locked; memMidi = lastMidi; memAt = lastVoicedAt; memTrusted = lockTrusted
+        }
         history.clear()
         pendingJump = 0
         lockedString = null
@@ -123,7 +141,8 @@ class TunerLogic {
 
         val f = median()
         val midi = freqToMidi(f, a4)
-        var base = guitarReading(midi, f)
+        lastMidi = midi
+        var base = guitarReading(midi, f, now)
         if (base.warning == null && wrongWay(base.cents, now)) base = base.copy(warning = Warning.WrongWay)
 
         val inTune = abs(base.cents) < IN_TUNE_CENTS && base.warning == null
@@ -162,7 +181,7 @@ class TunerLogic {
         return now < wrongUntil
     }
 
-    private fun guitarReading(midi: Float, f: Float): Reading {
+    private fun guitarReading(midi: Float, f: Float, now: Long): Reading {
         val notes = tuning.notes
         val manual = manualString
         val idx: Int
@@ -173,16 +192,32 @@ class TunerLogic {
             // струну слишком сильно, тюнер не перепрыгнет на соседнюю,
             // а предупредит о перетяге.
             val locked = lockedString
-            idx = locked ?: notes.indices.minBy { abs(midi - notes[it]) }
-            if (locked == null) {
-                lockedString = idx
-                // Уверены в струне, только если нота близко к ней. Исключение — самая
-                // высокая и самая низкая струны: выше/ниже них других струн нет.
-                val dev = (midi - notes[idx]) * 100f
-                lockTrusted = abs(dev) <= UNSURE_CENTS ||
-                    (dev > 0f && notes[idx] == notes.max()) ||
-                    (dev < 0f && notes[idx] == notes.min())
+            val provisional = locked != null && !lockFromMemory && now - lockedAt < TREND_SKIP_MS
+            if (locked == null || provisional) {
+                val mem = memString
+                if (locked == null && mem != null && now - memAt <= CONTINUITY_MS &&
+                    abs(midi - memMidi) * 100f <= CONTINUITY_CENTS
+                ) {
+                    // Та же струна, что строили только что: её дёрнули снова
+                    lockedString = mem
+                    lockTrusted = memTrusted
+                    lockFromMemory = true
+                } else {
+                    // Новая струна: ближайшая по высоте. Первые доли секунды
+                    // пересматриваем выбор — в момент щипка высота «плывёт».
+                    val nearest = notes.indices.minBy { abs(midi - notes[it]) }
+                    // Уверены в струне, только если нота близко к ней. Исключение — самая
+                    // высокая и самая низкая струны: выше/ниже них других струн нет.
+                    val dev = (midi - notes[nearest]) * 100f
+                    lockTrusted = abs(dev) <= UNSURE_CENTS ||
+                        (dev > 0f && notes[nearest] == notes.max()) ||
+                        (dev < 0f && notes[nearest] == notes.min())
+                    lockedString = nearest
+                    lockFromMemory = false
+                }
+                if (locked == null) lockedAt = now
             }
+            idx = lockedString ?: 0
         }
         val cents = (midi - notes[idx]) * 100f
 

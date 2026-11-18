@@ -5,6 +5,7 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Process
+import android.util.Log
 import kotlin.math.sqrt
 
 /**
@@ -37,52 +38,83 @@ class AudioEngine(
         thread = null
     }
 
+    /**
+     * Открывает микрофон. Пробуем по очереди: «чистый» источник для распознавания речи
+     * в формате float, потом 16 бит, потом обычный микрофон — на разных телефонах
+     * поддерживается разное.
+     */
     @SuppressLint("MissingPermission") // разрешение проверяется до запуска
+    private fun open(): Pair<AudioRecord, Boolean>? {
+        val options = listOf(
+            MediaRecorder.AudioSource.VOICE_RECOGNITION to AudioFormat.ENCODING_PCM_FLOAT,
+            MediaRecorder.AudioSource.VOICE_RECOGNITION to AudioFormat.ENCODING_PCM_16BIT,
+            MediaRecorder.AudioSource.MIC to AudioFormat.ENCODING_PCM_16BIT,
+        )
+        for ((source, encoding) in options) {
+            val minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, encoding)
+            if (minBuf <= 0) continue
+            val record = try {
+                AudioRecord(source, SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, encoding, maxOf(minBuf, HOP * 4 * 4))
+            } catch (e: Exception) {
+                null
+            } ?: continue
+            if (record.state == AudioRecord.STATE_INITIALIZED) {
+                return record to (encoding == AudioFormat.ENCODING_PCM_FLOAT)
+            }
+            record.release()
+        }
+        return null
+    }
+
     private fun loop() {
         Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
-        val minBuf = AudioRecord.getMinBufferSize(
-            SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_FLOAT
-        )
-        val record = try {
-            AudioRecord(
-                // VOICE_RECOGNITION — микрофон почти без «улучшайзеров» (шумодав, АРУ)
-                MediaRecorder.AudioSource.VOICE_RECOGNITION,
-                SAMPLE_RATE,
-                AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_FLOAT,
-                maxOf(minBuf, HOP * 4 * 4)
-            )
-        } catch (e: Exception) {
+        val opened = open()
+        if (opened == null) {
             onError("Не удалось открыть микрофон")
             running = false
             return
         }
-        if (record.state != AudioRecord.STATE_INITIALIZED) {
-            onError("Микрофон занят другим приложением")
-            record.release()
-            running = false
-            return
-        }
+        val (record, isFloat) = opened
 
         val window = FloatArray(BUFFER)
         val hop = FloatArray(HOP)
+        val shorts = ShortArray(HOP)
         try {
             record.startRecording()
+            if (record.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+                onError("Микрофон занят другим приложением")
+                running = false
+                return
+            }
             while (running) {
                 var read = 0
                 while (read < HOP && running) {
-                    val n = record.read(hop, read, HOP - read, AudioRecord.READ_BLOCKING)
+                    val n = if (isFloat) {
+                        record.read(hop, read, HOP - read, AudioRecord.READ_BLOCKING)
+                    } else {
+                        record.read(shorts, read, HOP - read, AudioRecord.READ_BLOCKING)
+                    }
                     if (n < 0) { onError("Ошибка чтения микрофона"); running = false; break }
                     read += n
                 }
                 if (!running) break
+                if (!isFloat) for (i in 0 until HOP) hop[i] = shorts[i] / 32768f
                 System.arraycopy(window, HOP, window, 0, BUFFER - HOP)
                 System.arraycopy(hop, 0, window, BUFFER - HOP, HOP)
 
                 var sq = 0f
                 for (v in hop) sq += v * v
-                onFrame(window, sqrt(sq / HOP))
+                try {
+                    onFrame(window, sqrt(sq / HOP))
+                } catch (e: Exception) {
+                    // Ошибка в одном кадре не должна останавливать тюнер
+                    Log.e("TuneSense", "Ошибка анализа кадра", e)
+                }
             }
+        } catch (e: Exception) {
+            Log.e("TuneSense", "Ошибка микрофона", e)
+            onError("Ошибка микрофона")
+            running = false
         } finally {
             try { record.stop() } catch (_: Exception) {}
             record.release()

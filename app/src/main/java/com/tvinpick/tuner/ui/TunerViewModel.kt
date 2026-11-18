@@ -5,8 +5,7 @@ import android.content.Context
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import com.tvinpick.tuner.audio.AudioEngine
-import com.tvinpick.tuner.audio.ChordDetector
-import com.tvinpick.tuner.audio.PitchAnalyzer
+import com.tvinpick.tuner.audio.SoundAnalyzer
 import com.tvinpick.tuner.model.HeadShape
 import com.tvinpick.tuner.model.INSTRUMENTS
 import com.tvinpick.tuner.model.Instrument
@@ -37,9 +36,7 @@ fun chordsFor(instrument: Instrument) = instrument.shape != HeadShape.BASS && in
 class TunerViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("tuner", Context.MODE_PRIVATE)
     private val session = Session()
-    private val chordDetector = ChordDetector(AudioEngine.SAMPLE_RATE, AudioEngine.BUFFER)
-    @Volatile private var analyzer = PitchAnalyzer.forInstrument(INSTRUMENTS[0], AudioEngine.SAMPLE_RATE)
-    @Volatile private var chordsEnabled = true
+    @Volatile private var analyzer = SoundAnalyzer(INSTRUMENTS[0], AudioEngine.SAMPLE_RATE, AudioEngine.BUFFER)
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
@@ -59,10 +56,10 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun applyInstrument(inst: Instrument, tuning: Int) {
-        analyzer = PitchAnalyzer.forInstrument(inst, AudioEngine.SAMPLE_RATE)
-        chordsEnabled = chordsFor(inst)
+        val a = SoundAnalyzer(inst, AudioEngine.SAMPLE_RATE, AudioEngine.BUFFER)
+        analyzer = a
         synchronized(session) {
-            session.chordsEnabled = chordsEnabled
+            session.chordsEnabled = a.chordsEnabled
             session.tuner.tuning = inst.tunings[tuning]
             session.tuner.manualString = null
         }
@@ -71,10 +68,8 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     /** Вызывается из аудиопотока ~20 раз в секунду. */
     private fun onFrame(samples: FloatArray, level: Float) {
         val now = SystemClock.elapsedRealtime()
-        val loud = level >= SILENCE
-        val pitch = if (loud) analyzer.detect(samples) else null
-        val frame = if (loud && chordsEnabled) chordDetector.analyze(samples) else null
-        val result = synchronized(session) { session.process(pitch, frame, level, now) }
+        val sound = analyzer.analyze(samples, level)
+        val result = synchronized(session) { session.process(sound.pitch, sound.chord, level, now) }
         _state.update { it.copy(session = result) }
     }
 
@@ -130,6 +125,5 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         const val A4_MIN = 415
         const val A4_MAX = 466
-        private const val SILENCE = 0.002f
     }
 }

@@ -25,6 +25,8 @@ class ChordLogic {
         private const val HOLD_MS = 2500L
         private const val RESET_MS = 400L
         private const val HISTORY = 8
+        /** После нового удара ждём, пока прошлый аккорд уйдёт из буфера (~0,37 с). */
+        private const val ONSET_SKIP_MS = 330L
     }
 
     private var ema: FloatArray? = null
@@ -33,6 +35,7 @@ class ChordLogic {
     private var candidateCount = 0
     private var stable: Chord? = null
     private var lastSoundAt = Long.MIN_VALUE / 2
+    private var onsetAt = Long.MIN_VALUE / 2
     private val history = ArrayList<Chord>()
     var reading = ChordReading()
         private set
@@ -56,7 +59,17 @@ class ChordLogic {
             return reading
         }
         lastSoundAt = now
-        if (onset) ema = null
+        if (onset) {
+            ema = null
+            onsetAt = now
+            candidate = null
+            candidateCount = 0
+        }
+        // Пока в буфере смешаны старый и новый аккорд — не распознаём (иначе Am→F даёт «Fmaj7»)
+        if (now - onsetAt < ONSET_SKIP_MS) {
+            reading = reading.copy(active = true, fresh = false)
+            return reading
+        }
 
         // Нормируем кадр, чтобы громкость не влияла на вес
         val c = frame.chroma

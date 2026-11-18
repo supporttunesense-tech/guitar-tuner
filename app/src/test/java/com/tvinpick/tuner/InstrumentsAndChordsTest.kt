@@ -87,7 +87,7 @@ class InstrumentsAndChordsTest {
         var t = 0L
         for (n in listOf("Am", "F", "C", "G")) {
             val frame = det.analyze(strum(chords.getValue(n), 7))
-            repeat(5) { logic.process(frame, 0.05f, t); t += 46 }
+            repeat(12) { logic.process(frame, 0.05f, t); t += 46 }
             // пауза между аккордами
             repeat(12) { logic.process(null, 0f, t); t += 46 }
         }
