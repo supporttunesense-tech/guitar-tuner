@@ -111,8 +111,8 @@ private fun buildHead(inst: Instrument, w: Float, h: Float): Head {
     val leftCount = if (s.inline) n else ceil(n / 2f).toInt()
     val slots = if (s.inline) n else leftCount
 
-    val used = s.scrollR * 1.7f + s.headLen + s.trans + 60f
-    val top = max(14f, (h - used) / 2f + 6f) + s.scrollR * 1.7f
+    // Головка прижата кверху, гриф уходит вниз до края экрана
+    val top = 22f + s.scrollR * 1.7f
     val nutY = top + s.headLen + s.trans
     val shoulderY = nutY - s.trans
     val cx = if (s.inline) w / 2f + 44f else w / 2f

@@ -60,6 +60,7 @@ import com.tvinpick.tuner.audio.Chord
 import com.tvinpick.tuner.model.INSTRUMENTS
 import com.tvinpick.tuner.model.Warning
 import com.tvinpick.tuner.model.noteName
+import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -123,9 +124,25 @@ private fun display(state: UiState): Display {
         )
     }
     val warning = r.warning
-    val color = if (warning == Warning.TooHigh) TunerColors.Danger else centsColor(r.cents)
+    if (warning == Warning.Unsure) {
+        // Нота между струнами: перетянутая струна похожа на недотянутую соседнюю.
+        // Не командуем «подтяни» наугад.
+        return Display(
+            main = "?", moving = false, lit = true, color = TunerColors.Near,
+            sub = "${"%.1f".format(r.frequency)} Гц",
+            status = "Не понимаю, какая это струна",
+            statusColor = TunerColors.Near,
+            hint = "Нажми внизу на кружок струны, которую настраиваешь",
+        )
+    }
+    val color = when (warning) {
+        Warning.TooHigh -> TunerColors.Danger
+        Warning.WrongWay -> TunerColors.Far
+        else -> centsColor(r.cents)
+    }
     val (status, statusColor) = when {
-        warning == Warning.TooHigh -> "Слишком высоко — ослабь!" to TunerColors.Danger
+        warning == Warning.TooHigh -> "СТОП! Струна перетянута — ослабь" to TunerColors.Danger
+        warning == Warning.WrongWay -> "Не в ту сторону! Крути колок обратно" to TunerColors.Far
         warning is Warning.OtherString ->
             "Звучит ${n - warning.index}-я струна (${noteName(state.tuning.notes[warning.index])})" to TunerColors.Far
         r.confirmed -> "Настроено" to TunerColors.Good
@@ -166,6 +183,18 @@ fun TunerScreen(state: UiState, vm: TunerViewModel) {
             ripple.animateTo(1f, tween(900))
             ripple.snapTo(0f)
         }
+    }
+    // Опасность: вибрируем, пока струна перетянута; одиночный сигнал — если крутят не туда
+    val danger = r.active && r.warning == Warning.TooHigh
+    LaunchedEffect(danger) {
+        while (danger) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            delay(600)
+        }
+    }
+    val wrongWay = r.active && r.warning == Warning.WrongWay
+    LaunchedEffect(wrongWay) {
+        if (wrongWay) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
     }
 
     Column(
@@ -209,6 +238,7 @@ fun TunerScreen(state: UiState, vm: TunerViewModel) {
                 tuning = state.tuning,
                 activeString = when {
                     state.session.showChord -> null
+                    r.active && r.warning == Warning.Unsure -> null
                     r.active -> r.stringIndex
                     else -> state.manualString
                 },
