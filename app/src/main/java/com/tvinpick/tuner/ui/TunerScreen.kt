@@ -255,7 +255,7 @@ fun TunerScreen(state: UiState, vm: TunerViewModel) {
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
-                // Акустика и 7-струнка — рисованная головка
+                // Акустика — рисованная головка
                 Headstock(
                     instrument = state.instrument,
                     tuning = state.tuning,

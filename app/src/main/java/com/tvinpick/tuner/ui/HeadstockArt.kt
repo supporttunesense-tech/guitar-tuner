@@ -65,6 +65,19 @@ private const val LABEL_R = 34f
 private const val LABEL_GAP = 10f
 
 object HeadArts {
+    // Картинка доработана: добавлен седьмой колок справа, высокая E идёт на свой колок
+    val SEVEN = HeadArt(
+        R.drawable.headstock_seven, left = 79f, right = 438f,
+        spots = listOf(
+            Spot(o(108, 430), 79f, -1, o(178, 440), o(201, 578), o(198, 745)),
+            Spot(o(126, 350), 96f, -1, o(193, 358), o(223, 578), o(222, 745)),
+            Spot(o(140, 268), 111f, -1, o(211, 285), o(244, 578), o(244, 745)),
+            Spot(o(158, 190), 128f, -1, o(228, 205), o(265, 578), o(265, 745)),
+            Spot(o(383, 288), 407f, 1, o(310, 305), o(286, 578), o(286, 745)),
+            Spot(o(403, 385), 430f, 1, o(332, 407), o(306, 578), o(306, 745)),
+            Spot(o(411, 458), 438f, 1, o(352, 457), o(326, 578), o(328, 745))
+        )
+    )
     val BASS4 = HeadArt(
         R.drawable.headstock_bass4, left = 45f, right = 468f,
         spots = listOf(
@@ -144,7 +157,7 @@ object HeadArts {
     )
 }
 
-/** Картинка для инструмента или null — тогда рисуем головку сами (акустика, 7 струн). */
+/** Картинка для инструмента или null — тогда рисуем головку сами (акустика). */
 fun artFor(inst: Instrument): HeadArt? = when (inst.shape) {
     HeadShape.ELECTRIC -> HeadArts.ELECTRIC
     HeadShape.CLASSICAL -> HeadArts.CLASSICAL
@@ -155,7 +168,7 @@ fun artFor(inst: Instrument): HeadArt? = when (inst.shape) {
         "Виолончель" -> HeadArts.CELLO
         else -> HeadArts.VIOLIN
     }
-    HeadShape.ACOUSTIC -> null
+    HeadShape.ACOUSTIC -> if (inst.strings == 7) HeadArts.SEVEN else null
 }?.takeIf { it.spots.size == inst.strings }
 
 private fun labelCenter(s: Spot) = Offset(s.outer + s.dir * (LABEL_GAP + LABEL_R), s.knob.y)
