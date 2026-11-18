@@ -233,21 +233,40 @@ fun TunerScreen(state: UiState, vm: TunerViewModel) {
         )
 
         Box(Modifier.fillMaxWidth().weight(1f)) {
-            Headstock(
-                instrument = state.instrument,
-                tuning = state.tuning,
-                activeString = when {
-                    state.session.showChord -> null
-                    r.active && r.warning == Warning.Unsure -> null
-                    r.active -> r.stringIndex
-                    else -> state.manualString
-                },
-                activeColor = if (r.active && !state.session.showChord) color else TunerColors.Good,
-                selectedString = state.manualString,
-                tunedStrings = state.session.tunedStrings,
-                onPegClick = { i -> vm.selectString(if (state.manualString == i) null else i) },
-                modifier = Modifier.fillMaxSize()
-            )
+            val activeString = when {
+                state.session.showChord -> null
+                r.active && r.warning == Warning.Unsure -> null
+                r.active -> r.stringIndex
+                else -> state.manualString
+            }
+            val activeColor = if (r.active && !state.session.showChord) color else TunerColors.Good
+            val onPeg = { i: Int -> vm.selectString(if (state.manualString == i) null else i) }
+            val art = artFor(state.instrument)
+            if (art != null) {
+                // Фотореалистичная картинка инструмента
+                HeadstockArt(
+                    art = art,
+                    tuning = state.tuning,
+                    activeString = activeString,
+                    activeColor = activeColor,
+                    selectedString = state.manualString,
+                    tunedStrings = state.session.tunedStrings,
+                    onPegClick = onPeg,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                // Акустика и 7-струнка — рисованная головка
+                Headstock(
+                    instrument = state.instrument,
+                    tuning = state.tuning,
+                    activeString = activeString,
+                    activeColor = activeColor,
+                    selectedString = state.manualString,
+                    tunedStrings = state.session.tunedStrings,
+                    onPegClick = onPeg,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
             if (state.session.tunedStrings.isNotEmpty()) {
                 TextButton(onClick = vm::resetTuned, modifier = Modifier.align(Alignment.TopStart)) {
                     Text("Сбросить ✓", color = TunerColors.Dim, fontSize = 12.sp)
