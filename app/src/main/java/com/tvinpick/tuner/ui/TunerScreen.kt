@@ -1,5 +1,6 @@
 package com.tvinpick.tuner.ui
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -58,7 +59,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tvinpick.tuner.audio.Chord
 import com.tvinpick.tuner.model.INSTRUMENTS
+import com.tvinpick.tuner.model.Status
 import com.tvinpick.tuner.model.Warning
+import com.tvinpick.tuner.model.Zone
 import com.tvinpick.tuner.model.midiToFreq
 import com.tvinpick.tuner.model.noteName
 import com.tvinpick.tuner.model.noteOctave
@@ -68,7 +71,6 @@ import com.tvinpick.tuner.model.Instrument
 import androidx.compose.material3.AlertDialog
 import kotlinx.coroutines.delay
 import kotlin.math.abs
-import kotlin.math.roundToInt
 
 object TunerColors {
     val Bg1 = Color(0xFF0B1A22)
@@ -81,12 +83,6 @@ object TunerColors {
     val Near = Color(0xFFF1C40F)
     val Far = Color(0xFFFF8A3D)
     val Danger = Color(0xFFFF4D4D)
-}
-
-private fun centsColor(cents: Float): Color = when {
-    abs(cents) < 5f -> TunerColors.Good
-    abs(cents) < 15f -> TunerColors.Near
-    else -> TunerColors.Far
 }
 
 private fun chordName(c: Chord) = noteName(c.root) + c.type.suffix
@@ -155,28 +151,39 @@ private fun display(state: UiState): Display {
             hint = "Нажми внизу на кружок струны, которую настраиваешь",
         )
     }
-    val color = when (warning) {
-        Warning.TooHigh -> TunerColors.Danger
-        Warning.WrongWay -> TunerColors.Far
-        else -> centsColor(r.cents)
+    // Цвет и надпись берём из устойчивых значений логики: они не мелькают
+    val zoneColor = when (r.zone) {
+        Zone.GOOD -> TunerColors.Good
+        Zone.NEAR -> TunerColors.Near
+        Zone.FAR -> TunerColors.Far
     }
-    val (status, statusColor) = when {
-        warning == Warning.TooHigh -> "СТОП! Струна перетянута — ослабь" to TunerColors.Danger
-        warning == Warning.WrongWay -> "Не в ту сторону! Крути колок обратно" to TunerColors.Far
-        warning is Warning.OtherString ->
-            "Звучит ${n - warning.index}-я струна (${noteName(state.tuning.notes[warning.index])})" to TunerColors.Far
-        r.confirmed -> "Настроено" to TunerColors.Good
-        r.inTune -> "Почти… держи" to TunerColors.Good
-        r.cents < 0 -> "Подтяни ↑" to color
-        else -> "Ослабь ↓" to color
+    val (status, statusColor) = when (r.status) {
+        Status.TOO_HIGH -> "СТОП! Струна перетянута — ослабь" to TunerColors.Danger
+        Status.WRONG_WAY -> "Не в ту сторону! Крути колок обратно" to TunerColors.Far
+        Status.OTHER_STRING -> {
+            val other = (warning as? Warning.OtherString)?.index
+            (if (other != null) "Звучит ${n - other}-я струна (${noteName(state.tuning.notes[other])})"
+            else "Похоже, звучит другая струна") to TunerColors.Far
+        }
+        Status.TUNED -> "Настроено" to TunerColors.Good
+        Status.ALMOST -> "Почти… держи" to TunerColors.Good
+        Status.TIGHTEN -> "Подтяни ↑" to zoneColor
+        Status.LOOSEN -> "Ослабь ↓" to zoneColor
+        Status.UNSURE, null -> "" to TunerColors.Dim
     }
-    val cents = r.cents.roundToInt()
+    val color = when (r.status) {
+        Status.TOO_HIGH -> TunerColors.Danger
+        Status.WRONG_WAY -> TunerColors.Far
+        else -> zoneColor
+    }
+    val cents = r.shownCents
     return Display(
         main = noteName(r.targetMidi ?: 0), moving = true, lit = true, color = color,
-        sub = "${"%.1f".format(r.frequency)} Гц  ·  ${if (cents > 0) "+" else if (cents < 0) "−" else ""}${abs(cents)} ¢",
+        sub = "${"%.1f".format(r.shownFreq)} Гц  ·  ${if (cents > 0) "+" else if (cents < 0) "−" else ""}${abs(cents)} ¢",
         status = status, statusColor = statusColor,
         hint = if (r.weak) "Играй громче или поднеси телефон ближе" else "",
     )
+}
 }
 
 @Composable
@@ -189,9 +196,12 @@ fun TunerScreen(state: UiState, vm: TunerViewModel) {
         animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessLow),
         label = "cents"
     )
-    val color by animateColorAsState(d.color, tween(250), label = "color")
-    val statusColor by animateColorAsState(d.statusColor, tween(250), label = "statusColor")
-    val glow by animateFloatAsState(if (d.lit) (if (abs(r.cents) < 5f || !d.moving) 1f else 0.6f) else 0f, tween(400), label = "glow")
+    // Цвета и свечение меняются мягко, без вспышек
+    val color by animateColorAsState(d.color, tween(450), label = "color")
+    val statusColor by animateColorAsState(d.statusColor, tween(450), label = "statusColor")
+    val glow by animateFloatAsState(
+        if (d.lit) (if (r.zone == Zone.GOOD || !d.moving) 1f else 0.6f) else 0f, tween(500), label = "glow"
+    )
 
     // Волна и вибрация, когда струна настроена
     val ripple = remember { Animatable(0f) }
@@ -242,15 +252,26 @@ fun TunerScreen(state: UiState, vm: TunerViewModel) {
             d.sub, color = TunerColors.Dim, fontSize = 13.sp, fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()
         )
-        Text(
-            d.status, color = statusColor, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-        )
-        Text(
-            d.hint, color = TunerColors.Dim, fontSize = 12.sp, textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
-        )
+        // Надписи сменяются плавно (растворение), строки фиксированной высоты — ничего не «прыгает»
+        Crossfade(
+            targetState = d.status, animationSpec = tween(300), label = "status",
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp).height(22.dp)
+        ) { text ->
+            Text(
+                text, color = statusColor, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        Crossfade(
+            targetState = d.hint, animationSpec = tween(400), label = "hint",
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp).height(18.dp)
+        ) { text ->
+            Text(
+                text, color = TunerColors.Dim, fontSize = 12.sp, textAlign = TextAlign.Center,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth()
+            )
+        }
 
         Box(Modifier.fillMaxWidth().weight(1f)) {
             val activeString = when {

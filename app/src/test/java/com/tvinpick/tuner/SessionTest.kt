@@ -94,7 +94,7 @@ class SessionTest {
         assertTrue("должен показываться аккорд", st.showChord)
         assertEquals("Am", noteName(st.chord.chord!!.root) + st.chord.chord!!.type.suffix)
 
-        st = feed(sound(listOf(45), 2), 4) // дёрнули одну струну A
+        st = feed(sound(listOf(45), 2), 8) // дёрнули одну струну A
         assertTrue("должен показываться тюнер", !st.showChord)
         assertEquals(1, st.reading.stringIndex)
     }

@@ -14,6 +14,12 @@ sealed interface Warning {
     data object WrongWay : Warning
 }
 
+/** Насколько близко к цели — цвет. Границы с «запасом», чтобы цвет не мигал. */
+enum class Zone { GOOD, NEAR, FAR }
+
+/** Что написать под шкалой. Меняется не чаще, чем можно прочитать. */
+enum class Status { TIGHTEN, LOOSEN, ALMOST, TUNED, TOO_HIGH, WRONG_WAY, UNSURE, OTHER_STRING }
+
 data class Reading(
     /** Есть звук (или он только что был — показываем последнее значение). */
     val active: Boolean = false,
@@ -31,6 +37,11 @@ data class Reading(
     /** Сигнал слабый — подсказать играть громче. */
     val weak: Boolean = false,
     val warning: Warning? = null,
+    val zone: Zone = Zone.FAR,
+    val status: Status? = null,
+    /** Цифры для показа: обновляются ~4 раза в секунду, чтобы их можно было прочитать. */
+    val shownCents: Int = 0,
+    val shownFreq: Float = 0f,
 )
 
 /**
@@ -55,6 +66,13 @@ class TunerLogic {
         private const val WRONG_WAY_SHOW_MS = 1500L
         /** Сколько помним последнюю струну: человек дёргает её снова, пока крутит колок. */
         const val CONTINUITY_MS = 8000L
+        // Против мелькания
+        private const val SMOOTH = 0.3f            // сглаживание отклонения (≈150 мс)
+        private const val STATUS_DELAY_MS = 300L   // новая надпись должна продержаться
+        private const val STATUS_MIN_MS = 700L     // надпись видна не меньше
+        private const val NUMBERS_EVERY = 5        // цифры — раз в 5 кадров (~4 раза в секунду)
+        private const val WEAK_ON_FRAMES = 20      // «играй громче» — если тихо ~1 с
+        private const val WEAK_OFF_FRAMES = 25
         private const val CONTINUITY_CENTS = 150f
     }
 
@@ -82,6 +100,22 @@ class TunerLogic {
     private var refTime = 0L
     private var refCents = Float.NaN
     private var wrongUntil = 0L
+    // Против мелькания
+    private var smooth = Float.NaN
+    private var smoothString: Int? = null
+    private var zone = Zone.FAR
+    private var stickyTuned = false
+    private var nearSince = -1L
+    private var shownStatus: Status? = null
+    private var shownSince = 0L
+    private var pendingStatus: Status? = null
+    private var pendingSince = 0L
+    private var frameNo = 0
+    private var shownCents = 0
+    private var shownFreq = 0f
+    private var weakFrames = 0
+    private var loudFrames = 0
+    private var weakShown = false
     // Какую струну строили последней — чтобы после паузы не «перепрыгнуть» на соседнюю
     private var lockedAt = 0L
     private var lockFromMemory = false
@@ -107,6 +141,13 @@ class TunerLogic {
         noteStartAt = -1L
         refCents = Float.NaN
         wrongUntil = 0L
+        resetDisplay()
+    }
+
+    private fun resetDisplay() {
+        smooth = Float.NaN; smoothString = null; zone = Zone.FAR; stickyTuned = false; nearSince = -1L
+        shownStatus = null; pendingStatus = null; frameNo = 0
+        weakFrames = 0; loudFrames = 0; weakShown = false
     }
 
     private fun median(): Float = history.sorted()[history.size / 2]
@@ -116,6 +157,7 @@ class TunerLogic {
         history.clear(); pendingJump = 0; lockedString = null; lockTrusted = false
         inTuneSince = -1L; noteStartAt = -1L; refCents = Float.NaN; wrongUntil = 0L
         lastVoicedAt = Long.MIN_VALUE / 2
+        resetDisplay()
         reading = Reading(stringIndex = manualString)
     }
 
@@ -153,16 +195,86 @@ class TunerLogic {
         var base = guitarReading(midi, f, now)
         if (base.warning == null && wrongWay(base.cents, now)) base = base.copy(warning = Warning.WrongWay)
 
-        val inTune = abs(base.cents) < IN_TUNE_CENTS && base.warning == null
+        // 1) Сглаживаем отклонение — стрелка и цвет не дрожат от мелких колебаний
+        if (smooth.isNaN() || smoothString != base.stringIndex) {
+            smooth = base.cents; smoothString = base.stringIndex
+        } else {
+            smooth += SMOOTH * (base.cents - smooth)
+        }
+        val c = abs(smooth)
+
+        // 2) Цвет с «запасом»: войти в зелёное — ближе 5 центов, выйти — дальше 8
+        zone = when (zone) {
+            Zone.GOOD -> if (c <= 8f) Zone.GOOD else if (c <= 18f) Zone.NEAR else Zone.FAR
+            Zone.NEAR -> if (c < IN_TUNE_CENTS) Zone.GOOD else if (c <= 22f) Zone.NEAR else Zone.FAR
+            Zone.FAR -> if (c < IN_TUNE_CENTS) Zone.GOOD else if (c < 15f) Zone.NEAR else Zone.FAR
+        }
+        val inTune = zone == Zone.GOOD && base.warning == null
         if (inTune) {
             if (inTuneSince < 0) inTuneSince = now
+            if (now - inTuneSince >= CONFIRM_MS) stickyTuned = true
         } else {
             inTuneSince = -1L
         }
-        val confirmed = inTune && now - inTuneSince >= CONFIRM_MS
+        // 3) «Настроено» не пропадает от случайного колебания: только если ушли далеко
+        //    или держится «близко, но не точно» дольше 0,7 с
+        if (stickyTuned) {
+            if (base.warning != null || zone == Zone.FAR) stickyTuned = false
+            else if (zone == Zone.NEAR) {
+                if (nearSince < 0) nearSince = now
+                if (now - nearSince > 700) stickyTuned = false
+            } else nearSince = -1L
+        }
+        val confirmed = stickyTuned
         if (confirmed) base.stringIndex?.let { tunedStrings.add(it) }
 
-        reading = base.copy(inTune = inTune, confirmed = confirmed, weak = level < WEAK_LEVEL)
+        // 4) Надпись: опасность — сразу, остальное — если продержалось 0,3 с, и не чаще раза в 0,7 с
+        val raw = when (base.warning) {
+            Warning.TooHigh -> Status.TOO_HIGH
+            Warning.WrongWay -> Status.WRONG_WAY
+            Warning.Unsure -> Status.UNSURE
+            is Warning.OtherString -> Status.OTHER_STRING
+            null -> when {
+                confirmed -> Status.TUNED
+                inTune || zone == Zone.GOOD -> Status.ALMOST
+                smooth < 0f -> Status.TIGHTEN
+                else -> Status.LOOSEN
+            }
+        }
+        val urgent = raw == Status.TOO_HIGH || raw == Status.UNSURE || raw == Status.OTHER_STRING
+        if (shownStatus == null || urgent) {
+            if (shownStatus != raw) { shownStatus = raw; shownSince = now }
+            pendingStatus = null
+        } else if (raw != shownStatus) {
+            if (pendingStatus != raw) { pendingStatus = raw; pendingSince = now }
+            if (now - pendingSince >= STATUS_DELAY_MS && now - shownSince >= STATUS_MIN_MS) {
+                shownStatus = raw; shownSince = now; pendingStatus = null
+            }
+        } else {
+            pendingStatus = null
+        }
+
+        // 5) Цифры — реже, чтобы читались
+        if (frameNo++ % NUMBERS_EVERY == 0) {
+            shownCents = Math.round(smooth)
+            shownFreq = f
+        }
+
+        // 6) «Играй громче» — только если тихо долго, и не исчезает сразу
+        if (level < WEAK_LEVEL) { weakFrames++; loudFrames = 0 } else { loudFrames++; weakFrames = 0 }
+        if (!weakShown && weakFrames >= WEAK_ON_FRAMES) weakShown = true
+        if (weakShown && loudFrames >= WEAK_OFF_FRAMES) weakShown = false
+
+        reading = base.copy(
+            cents = smooth,
+            inTune = inTune,
+            confirmed = confirmed,
+            weak = weakShown,
+            zone = zone,
+            status = shownStatus,
+            shownCents = shownCents,
+            shownFreq = shownFreq,
+        )
         return reading
     }
 

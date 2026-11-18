@@ -25,6 +25,7 @@ class Session {
         private const val NO_FUNDAMENTAL = 0.03f
         private const val CHORD_CONFIDENCE = 0.85f
         private const val CHORD_SHOW_MS = 4000L
+        private const val NOTE_FRAMES_TO_SWITCH = 5
     }
 
     val tuner = TunerLogic()
@@ -38,6 +39,7 @@ class Session {
         set(value) { field = value; if (!value) chords.clear() }
 
     private var lastNoteAt = Long.MIN_VALUE / 2
+    private var noteFrames = 0
     private var lastChordAt = Long.MIN_VALUE / 2
 
     fun isChord(pitch: PitchDetector.Result?, frame: ChordDetector.Frame?): Boolean {
@@ -61,7 +63,10 @@ class Session {
         val chordish = isChord(pitch, frame)
         val reading = tuner.process(if (chordish) null else pitch?.frequency, level, now)
         val chord = chords.process(if (chordish) frame else null, level, now)
-        if (!chordish && pitch != null) lastNoteAt = now
+        // Обратно к тюнеру — только если одна струна звучит устойчиво (~0,25 с),
+        // а не мелькнула на кадр между аккордами
+        noteFrames = if (!chordish && pitch != null) noteFrames + 1 else 0
+        if (noteFrames >= NOTE_FRAMES_TO_SWITCH) lastNoteAt = now
         if (chord.fresh) lastChordAt = now
         val showChord = chord.chord != null && lastChordAt >= lastNoteAt && now - lastChordAt < CHORD_SHOW_MS
         if (healthEnabled) {
