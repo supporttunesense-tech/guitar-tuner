@@ -87,11 +87,12 @@ private class Spec(
 private fun specOf(inst: Instrument): Spec {
     val n = inst.strings
     return when (inst.shape) {
-        HeadShape.ACOUSTIC -> if (n >= 7) Spec(74f, 118f, 240f, 46f, 3f, false) else Spec(64f, 104f, 214f, 46f, 3f, false)
-        HeadShape.CLASSICAL -> Spec(66f, 100f, 200f, 40f, 1f, false)
-        HeadShape.UKULELE -> Spec(50f, 86f, 156f, 36f, 2f, false)
+        // Пропорции как у настоящей акустики: длина головки ≈ 1,7 ширины
+        HeadShape.ACOUSTIC -> if (n >= 7) Spec(80f, 118f, 212f, 42f, 3f, false) else Spec(70f, 104f, 172f, 42f, 3f, false)
+        HeadShape.CLASSICAL -> Spec(70f, 100f, 172f, 40f, 1f, false)
+        HeadShape.UKULELE -> Spec(52f, 86f, 128f, 34f, 2f, false)
         HeadShape.VIOLIN -> Spec(34f, 48f, 150f, 24f, 2f, false, scrollR = 28f)
-        HeadShape.ELECTRIC -> Spec(60f, 84f, 250f, 40f, 0f, true)
+        HeadShape.ELECTRIC -> Spec(60f, 84f, 236f, 40f, 0f, true)
         HeadShape.BASS -> Spec(58f + 10f * (n - 4), 92f, 270f + 25f * (n - 4), 40f, 0f, true)
     }
 }
@@ -121,8 +122,8 @@ private fun buildHead(inst: Instrument, w: Float, h: Float): Head {
     // Край головки на высоте y (у акустики головка чуть расширяется кверху)
     fun edge(y: Float): Float = b0 + (bigB - b0) * (shoulderY - y) / (shoulderY - top - 18f)
 
-    val pegTop = top + if (violin) 22f else if (s.inline) 30f else 48f
-    val pegBottom = shoulderY - if (violin) 14f else if (s.inline) 16f else 20f
+    val pegTop = top + if (violin) 22f else if (s.inline) 30f else 46f
+    val pegBottom = shoulderY - if (violin) 14f else if (s.inline) 16f else 26f
     val gap = if (slots > 1) (pegBottom - pegTop) / (slots - 1) else 0f
     val labelR = min(19f, gap * 0.42f)
     val inlineEdge = cx - s.nutW / 2f - 6f
@@ -184,8 +185,8 @@ private fun buildHead(inst: Instrument, w: Float, h: Float): Head {
             // Головка с «короной» сверху, как у акустики
             val peak = when (shape) {
                 HeadShape.CLASSICAL -> 6f
-                HeadShape.UKULELE -> 9f
-                else -> 12f
+                HeadShape.UKULELE -> 10f
+                else -> 16f
             }
             p.moveTo(cx - a, nutY)
             p.cubicTo(cx - a, nutY - s.trans * 0.45f, cx - b0, nutY - s.trans * 0.55f, cx - b0, shoulderY)
