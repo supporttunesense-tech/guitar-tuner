@@ -46,6 +46,9 @@ class Pluck(
     }
 }
 
+/** Любой источник звука для симуляции (например, гул). */
+interface PluckLike { fun sample(t: Double): Double }
+
 /** Прогон звука через тот же конвейер, что TunerViewModel.onFrame. */
 class Rig(instrument: Instrument, a4: Float = 440f) {
     val sr = 44100 // как AudioEngine.SAMPLE_RATE
@@ -56,12 +59,13 @@ class Rig(instrument: Instrument, a4: Float = 440f) {
         tuner.tuning = instrument.tunings[0]
         tuner.a4 = a4
         chordsEnabled = analyzer.chordsEnabled
+        healthEnabled = instrument.shape.name == "ACOUSTIC"
     }
     private val rnd = java.util.Random(42)
     private var n = 0L
     val frames = ArrayList<Pair<Double, SessionState>>()
 
-    fun run(seconds: Double, noise: Double = 0.0015, plucks: List<Pluck>) {
+    fun run(seconds: Double, noise: Double = 0.0015, plucks: List<Pluck>, extra: List<PluckLike> = emptyList()) {
         val total = (seconds * sr).toLong()
         val hopBuf = FloatArray(hop)
         var done = 0L
@@ -70,6 +74,7 @@ class Rig(instrument: Instrument, a4: Float = 440f) {
                 val t = (n + i).toDouble() / sr
                 var s = rnd.nextGaussian() * noise
                 for (p in plucks) s += p.sample(t, sr)
+                for (e in extra) s += e.sample(t)
                 hopBuf[i] = s.toFloat()
             }
             n += hop; done += hop
@@ -80,7 +85,7 @@ class Rig(instrument: Instrument, a4: Float = 440f) {
             val level = sqrt(sq / hop)
             val sound = analyzer.analyze(buffer, level)
             val time = n.toDouble() / sr
-            frames += time to session.process(sound.pitch, sound.chord, level, (time * 1000).toLong())
+            frames += time to session.process(sound.pitch, sound.chord, level, (time * 1000).toLong(), sound.noiseFloor, sound.humStarted)
         }
     }
 

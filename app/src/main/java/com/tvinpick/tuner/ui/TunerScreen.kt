@@ -59,7 +59,13 @@ import androidx.compose.ui.unit.sp
 import com.tvinpick.tuner.audio.Chord
 import com.tvinpick.tuner.model.INSTRUMENTS
 import com.tvinpick.tuner.model.Warning
+import com.tvinpick.tuner.model.midiToFreq
 import com.tvinpick.tuner.model.noteName
+import com.tvinpick.tuner.model.noteOctave
+import com.tvinpick.tuner.model.shapeOf
+import com.tvinpick.tuner.model.customRange
+import com.tvinpick.tuner.model.Instrument
+import androidx.compose.material3.AlertDialog
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -101,13 +107,25 @@ private fun display(state: UiState): Display {
     val s = state.session
     val r = s.reading
     val n = state.instrument.strings
+    val playing = state.playing
+    if (playing != null) {
+        val midi = state.tuning.notes[playing]
+        return Display(
+            main = noteName(midi), moving = false, lit = true, color = TunerColors.Good,
+            sub = "Эталон · ${"%.1f".format(midiToFreq(midi, state.a4.toFloat()))} Гц",
+            status = "Слушай и подстраивай на слух", statusColor = TunerColors.Good, hint = "",
+        )
+    }
     if (s.showChord) {
-        val chord = s.chord.chord!!
+        val sounding = s.chord.chord!!
+        // С каподастром называем аккорд «по пальцам», а как он звучит — подписываем
+        val chord = shapeOf(sounding, state.capo)
         return Display(
             main = chordName(chord), moving = false, lit = true,
             color = if (s.chord.fresh) TunerColors.Good else TunerColors.Dim,
-            sub = chord.notes.joinToString("  ·  ") { noteName(it) },
-            status = s.chord.history.takeLast(5).joinToString("  →  ") { chordName(it) },
+            sub = chord.notes.joinToString("  ·  ") { noteName(it) } +
+                if (state.capo > 0) "   (капо ${state.capo}, звучит ${chordName(sounding)})" else "",
+            status = s.chord.history.takeLast(5).joinToString("  →  ") { chordName(shapeOf(it, state.capo)) },
             statusColor = TunerColors.Dim, hint = "",
         )
     }
@@ -120,7 +138,9 @@ private fun display(state: UiState): Display {
             main = selected ?: "–", moving = false, lit = false, color = TunerColors.Dim,
             sub = if (state.chordsEnabled) "Дёрни струну или сыграй аккорд" else "Дёрни струну",
             status = if (allDone) "Все струны настроены" else "",
-            statusColor = TunerColors.Good, hint = "",
+            statusColor = TunerColors.Good,
+            hint = if (s.stringsOld) "Струны быстро затихают — возможно, их пора поменять"
+            else "Удерживай кружок ноты — прозвучит эталон",
         )
     }
     val warning = r.warning
@@ -234,13 +254,15 @@ fun TunerScreen(state: UiState, vm: TunerViewModel) {
 
         Box(Modifier.fillMaxWidth().weight(1f)) {
             val activeString = when {
+                state.playing != null -> state.playing
                 state.session.showChord -> null
                 r.active && r.warning == Warning.Unsure -> null
                 r.active -> r.stringIndex
                 else -> state.manualString
             }
-            val activeColor = if (r.active && !state.session.showChord) color else TunerColors.Good
+            val activeColor = if (r.active && !state.session.showChord && state.playing == null) color else TunerColors.Good
             val onPeg = { i: Int -> vm.selectString(if (state.manualString == i) null else i) }
+            val onPegLong = { i: Int -> vm.playReference(i) }
             val art = artFor(state.instrument)
             if (art != null) {
                 // Фотореалистичная картинка инструмента
@@ -252,6 +274,7 @@ fun TunerScreen(state: UiState, vm: TunerViewModel) {
                     selectedString = state.manualString,
                     tunedStrings = state.session.tunedStrings,
                     onPegClick = onPeg,
+                    onPegLongPress = onPegLong,
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
@@ -264,6 +287,7 @@ fun TunerScreen(state: UiState, vm: TunerViewModel) {
                     selectedString = state.manualString,
                     tunedStrings = state.session.tunedStrings,
                     onPegClick = onPeg,
+                    onPegLongPress = onPegLong,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -337,28 +361,111 @@ private fun Pickers(state: UiState, vm: TunerViewModel) {
             val t = state.tuning
             val short = if (t.name.startsWith("Стандарт")) "Стандарт" else t.name
             Pill(onClick = { open = true }, icon = false, text = "$short (${t.notes.joinToString("") { noteName(it) }})")
+            var editCustom by remember { mutableStateOf(false) }
             DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-                state.instrument.tunings.forEachIndexed { i, tuning ->
+                state.tunings.forEachIndexed { i, tuning ->
                     MenuItem("${tuning.name}   ${tuning.label}", i == state.tuningIndex) { open = false; vm.setTuning(i) }
                 }
-                HorizontalDivider(color = TunerColors.CardBorder)
-                // Камертон
-                Row(
-                    Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Камертон A4", fontSize = 14.sp, modifier = Modifier.weight(1f, fill = false))
-                    Spacer(Modifier.width(8.dp))
-                    TextButton(onClick = { vm.setA4(state.a4 - 1) }) { Text("−", fontSize = 18.sp) }
-                    Text("${state.a4} Гц", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                    TextButton(onClick = { vm.setA4(state.a4 + 1) }) { Text("+", fontSize = 18.sp) }
+                MenuItem(if (state.custom != null) "Изменить свой строй…" else "Свой строй…", false) {
+                    open = false; editCustom = true
                 }
+                HorizontalDivider(color = TunerColors.CardBorder)
+                StepperRow(
+                    title = "Каподастр",
+                    value = if (state.capo == 0) "нет" else "${state.capo} лад",
+                    onMinus = { vm.setCapo(state.capo - 1) },
+                    onPlus = { vm.setCapo(state.capo + 1) },
+                )
+                StepperRow(
+                    title = "Камертон A4",
+                    value = "${state.a4} Гц",
+                    onMinus = { vm.setA4(state.a4 - 1) },
+                    onPlus = { vm.setA4(state.a4 + 1) },
+                )
                 if (state.a4 != 440) {
                     MenuItem("Вернуть 440 Гц", false) { vm.setA4(440) }
                 }
             }
+            if (editCustom) {
+                CustomTuningDialog(
+                    instrument = state.instrument,
+                    initial = (state.custom ?: state.tuning).notes,
+                    onSave = { vm.saveCustomTuning(it); editCustom = false },
+                    onDismiss = { editCustom = false },
+                )
+            }
         }
     }
+}
+
+@Composable
+private fun StepperRow(title: String, value: String, onMinus: () -> Unit, onPlus: () -> Unit) {
+    Row(Modifier.padding(horizontal = 12.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, fontSize = 14.sp, modifier = Modifier.width(110.dp))
+        TextButton(onClick = onMinus) { Text("−", fontSize = 18.sp) }
+        Text(value, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, modifier = Modifier.width(64.dp))
+        TextButton(onClick = onPlus) { Text("+", fontSize = 18.sp) }
+    }
+}
+
+/**
+ * Свой строй: для каждой струны ноту можно сдвинуть вниз до 7 полутонов
+ * и вверх не больше чем на 3 — выше струна может порваться.
+ */
+@Composable
+private fun CustomTuningDialog(
+    instrument: Instrument,
+    initial: List<Int>,
+    onSave: (List<Int>) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val standard = instrument.tunings[0].notes
+    var notes by remember { mutableStateOf(initial.mapIndexed { i, m -> m.coerceIn(customRange(standard[i])) }) }
+    val n = notes.size
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = TunerColors.Card,
+        title = { Text("Свой строй", color = TunerColors.Text) },
+        text = {
+            Column {
+                // Сверху тонкая струна, как смотришь на гриф
+                for (i in (0 until n).reversed()) {
+                    val m = notes[i]
+                    val range = customRange(standard[i])
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("${n - i}-я", color = TunerColors.Dim, fontSize = 14.sp, modifier = Modifier.width(40.dp))
+                        TextButton(
+                            onClick = { notes = notes.toMutableList().also { it[i] = m - 1 } },
+                            enabled = m - 1 in range
+                        ) { Text("−", fontSize = 18.sp) }
+                        Text(
+                            "${noteName(m)}${noteOctave(m)}", color = TunerColors.Text, fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, modifier = Modifier.width(48.dp)
+                        )
+                        TextButton(
+                            onClick = { notes = notes.toMutableList().also { it[i] = m + 1 } },
+                            enabled = m + 1 in range
+                        ) { Text("+", fontSize = 18.sp) }
+                        if (m > standard[i]) {
+                            Text("выше нормы", color = TunerColors.Far, fontSize = 12.sp)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Выше стандарта больше чем на 3 полутона нельзя — струна может порваться.",
+                    color = TunerColors.Dim, fontSize = 12.sp
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(notes) }) { Text("Сохранить", color = TunerColors.Good) } },
+        dismissButton = {
+            Row {
+                TextButton(onClick = { notes = standard }) { Text("Как стандарт", color = TunerColors.Dim) }
+                TextButton(onClick = onDismiss) { Text("Отмена", color = TunerColors.Dim) }
+            }
+        },
+    )
 }
 
 @Composable

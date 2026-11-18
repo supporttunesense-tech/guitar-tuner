@@ -111,6 +111,14 @@ class TunerLogic {
 
     private fun median(): Float = history.sorted()[history.size / 2]
 
+    /** Сразу убрать показание (например, звук оказался гулом, а не струной). */
+    fun dropNote() {
+        history.clear(); pendingJump = 0; lockedString = null; lockTrusted = false
+        inTuneSince = -1L; noteStartAt = -1L; refCents = Float.NaN; wrongUntil = 0L
+        lastVoicedAt = Long.MIN_VALUE / 2
+        reading = Reading(stringIndex = manualString)
+    }
+
     fun process(freq: Float?, level: Float, now: Long): Reading {
         if (freq == null) {
             silentFrames++

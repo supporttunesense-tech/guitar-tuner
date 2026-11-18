@@ -201,11 +201,13 @@ fun HeadstockArt(
     selectedString: Int?,
     tunedStrings: Set<Int>,
     onPegClick: (Int) -> Unit,
+    onPegLongPress: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val image = ImageBitmap.imageResource(art.res)
     val measurer = rememberTextMeasurer()
     val onClick by rememberUpdatedState(onPegClick)
+    val onLong by rememberUpdatedState(onPegLongPress)
 
     BoxWithConstraints(modifier) {
         val w = constraints.maxWidth.toFloat()
@@ -216,14 +218,19 @@ fun HeadstockArt(
             Modifier
                 .fillMaxSize()
                 .pointerInput(art, w, h) {
-                    detectTapGestures { pos ->
+                    fun hit(pos: Offset): Int? {
                         fun dist(s: Spot) = min(
                             hypot(f.map(s.knob).x - pos.x, f.map(s.knob).y - pos.y),
                             hypot(f.map(labelCenter(s)).x - pos.x, f.map(labelCenter(s)).y - pos.y)
                         )
-                        val hit = art.spots.indices.minByOrNull { dist(art.spots[it]) }
-                        if (hit != null && dist(art.spots[hit]) < 50f * f.scale) onClick(hit)
+                        val best = art.spots.indices.minByOrNull { dist(art.spots[it]) } ?: return null
+                        return if (dist(art.spots[best]) < 50f * f.scale) best else null
                     }
+                    detectTapGestures(
+                        onTap = { pos -> hit(pos)?.let { onClick(it) } },
+                        // Долгое нажатие — проиграть эталонную ноту
+                        onLongPress = { pos -> hit(pos)?.let { onLong(it) } },
+                    )
                 }
         ) {
             val s = f.scale

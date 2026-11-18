@@ -10,6 +10,8 @@ data class SessionState(
     /** true — показываем аккорд, false — тюнер. */
     val showChord: Boolean = false,
     val tunedStrings: Set<Int> = emptySet(),
+    /** Струны быстро затихают — возможно, пора менять. */
+    val stringsOld: Boolean = false,
 )
 
 /**
@@ -27,6 +29,10 @@ class Session {
 
     val tuner = TunerLogic()
     val chords = ChordLogic()
+    val health = StringHealth()
+    /** Следить за затуханием струн (только стальные струны акустики). */
+    var healthEnabled = false
+        set(value) { field = value; health.reset() }
     /** Распознавать аккорды (для баса и смычковых выключено). */
     var chordsEnabled = true
         set(value) { field = value; if (!value) chords.clear() }
@@ -43,13 +49,24 @@ class Session {
             pitch.confidence < CHORD_CONFIDENCE                // периодичность размыта
     }
 
-    fun process(pitch: PitchDetector.Result?, frame: ChordDetector.Frame?, level: Float, now: Long): SessionState {
+    fun process(
+        pitch: PitchDetector.Result?,
+        frame: ChordDetector.Frame?,
+        level: Float,
+        now: Long,
+        noiseFloor: Float = 0.001f,
+        humStarted: Boolean = false,
+    ): SessionState {
+        if (humStarted) tuner.dropNote()
         val chordish = isChord(pitch, frame)
         val reading = tuner.process(if (chordish) null else pitch?.frequency, level, now)
         val chord = chords.process(if (chordish) frame else null, level, now)
         if (!chordish && pitch != null) lastNoteAt = now
         if (chord.fresh) lastChordAt = now
         val showChord = chord.chord != null && lastChordAt >= lastNoteAt && now - lastChordAt < CHORD_SHOW_MS
-        return SessionState(reading, chord, showChord, tuner.tunedStrings.toSet())
+        if (healthEnabled) {
+            health.process(level, if (reading.active && !chordish) reading.stringIndex else null, noiseFloor, now)
+        }
+        return SessionState(reading, chord, showChord, tuner.tunedStrings.toSet(), healthEnabled && health.looksOld)
     }
 }

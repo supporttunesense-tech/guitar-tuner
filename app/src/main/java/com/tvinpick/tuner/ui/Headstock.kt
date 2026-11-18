@@ -261,6 +261,7 @@ fun Headstock(
     selectedString: Int?,
     tunedStrings: Set<Int>,
     onPegClick: (Int) -> Unit,
+    onPegLongPress: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier) {
@@ -273,18 +274,24 @@ fun Headstock(
         val head = remember(instrument, wPx, hPx) { buildHead(instrument, wPx / u, hPx / u) }
         val measurer = rememberTextMeasurer()
         val onClick by rememberUpdatedState(onPegClick)
+        val onLong by rememberUpdatedState(onPegLongPress)
 
         Canvas(
             Modifier
                 .fillMaxSize()
                 .pointerInput(head, u) {
-                    detectTapGestures { pos ->
+                    fun hit(pos: Offset): Int? {
                         val x = pos.x / u
                         val y = pos.y / u
                         fun dist(p: Peg) = min(hypot(p.knob.x - x, p.knob.y - y), hypot(p.label.x - x, p.label.y - y))
-                        val hit = head.pegs.minByOrNull { dist(it) }
-                        if (hit != null && dist(hit) < 26f) onClick(hit.index)
+                        val best = head.pegs.minByOrNull { dist(it) } ?: return null
+                        return if (dist(best) < 26f) best.index else null
                     }
+                    detectTapGestures(
+                        onTap = { pos -> hit(pos)?.let { onClick(it) } },
+                        // Долгое нажатие — проиграть эталонную ноту
+                        onLongPress = { pos -> hit(pos)?.let { onLong(it) } },
+                    )
                 }
         ) {
             scale(u, u, pivot = Offset.Zero) {
