@@ -102,12 +102,17 @@ fun PreciseScreen(state: UiState, vm: TunerViewModel) {
                 contentAlignment = Alignment.Center
             ) { BackArrow(Modifier.size(18.dp)) }
             Spacer(Modifier.width(12.dp))
-            Column {
-                Text("Точная настройка", color = TunerColors.Text, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Column(Modifier.weight(1f)) {
+                Text("Точная настройка", color = TunerColors.Text, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                 Text(
                     "${state.instrument.shortName} · ${state.tuning.name} (${state.tuning.notes.joinToString("") { noteName(it) }})",
                     color = TunerColors.Dim, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
+            }
+            if (state.session.perfectStrings.isNotEmpty()) {
+                TextButton(onClick = vm::resetTuned) {
+                    Text("Сбросить ✓", color = TunerColors.Dim, fontSize = 13.sp, maxLines = 1, softWrap = false)
+                }
             }
         }
 
@@ -192,17 +197,17 @@ fun PreciseScreen(state: UiState, vm: TunerViewModel) {
 
         // Струны
         StringButtons(state, activeString = stringIndex, vm = vm)
-        Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        Box(Modifier.fillMaxWidth().height(44.dp).padding(bottom = 4.dp), contentAlignment = Alignment.Center) {
             if (state.manualString != null) {
-                TextButton(onClick = { vm.selectString(null) }) { Text("Авто", color = TunerColors.Good, fontSize = 13.sp) }
+                TextButton(onClick = { vm.selectString(null) }) {
+                    Text("Вернуть автовыбор струны", color = TunerColors.Good, fontSize = 13.sp, maxLines = 1)
+                }
             } else {
                 Text(
                     "Нажми на струну — выбрать, удерживай — эталон",
-                    color = TunerColors.Dim, fontSize = 12.sp, modifier = Modifier.padding(12.dp)
+                    color = TunerColors.Dim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center
                 )
-            }
-            if (state.session.perfectStrings.isNotEmpty()) {
-                TextButton(onClick = vm::resetTuned) { Text("Сбросить ✓", color = TunerColors.Dim, fontSize = 13.sp) }
             }
         }
     }
