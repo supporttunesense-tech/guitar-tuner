@@ -12,8 +12,8 @@ android {
         applicationId = "com.tvinpick.tuner"
         minSdk = 26
         targetSdk = 35
-        versionCode = 16
-        versionName = "2.5"
+        versionCode = 17
+        versionName = "2.5.1"
     }
 
     buildTypes {

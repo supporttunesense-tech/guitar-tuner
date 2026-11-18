@@ -386,8 +386,8 @@ private fun TitleRow(state: UiState, vm: TunerViewModel) {
         }
         Spacer(Modifier.width(8.dp))
         // Шестерёнка — настройки
-        RoundIconButton(size = 38, onClick = { vm.openSettings(true) }) {
-            GearIcon(Modifier.size(20.dp))
+        RoundIconButton(size = 40, onClick = { vm.openSettings(true) }) {
+            GearIcon(Modifier.size(22.dp), TunerColors.Dim)
         }
     }
 }

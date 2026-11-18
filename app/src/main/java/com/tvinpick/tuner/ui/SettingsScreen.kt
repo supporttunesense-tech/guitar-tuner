@@ -33,6 +33,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
@@ -66,7 +69,7 @@ fun SettingsScreen(state: UiState, vm: TunerViewModel) {
             SwitchRow(tr("Звук «резонанс», когда струна настроена", "\"Resonance\" chime when in tune"), state.chime, vm::setChime)
             SwitchRow(tr("Вибрация при настройке", "Vibrate when in tune"), state.vibration, vm::setVibration)
             SwitchRow(tr("Экран не гаснет", "Keep screen on"), state.keepScreenOn, vm::setKeepScreenOn)
-            SwitchRow(tr("Высокая контрастность (для солнца)", "High contrast (for sunlight)"), state.highContrast, vm::setHighContrast)
+            SwitchRow(tr("Высокая контрастность", "High contrast"), state.highContrast, vm::setHighContrast)
 
             Section(tr("Настройка", "Tuning"))
             StepRow(
@@ -211,24 +214,36 @@ fun BackArrowIcon(modifier: Modifier) {
     }
 }
 
-/** Шестерёнка. */
+/** Шестерёнка: цельная деталь с зубцами и отверстием в центре. */
 @Composable
 fun GearIcon(modifier: Modifier, color: Color = TunerColors.Text) {
     Canvas(modifier) {
         val r = size.minDimension / 2f
-        val c = Offset(size.width / 2f, size.height / 2f)
-        val sw = 1.8f * density
-        for (k in 0 until 8) {
-            val a = k * PI / 4
-            drawLine(
-                color,
-                c + Offset((cos(a) * r * 0.62f).toFloat(), (sin(a) * r * 0.62f).toFloat()),
-                c + Offset((cos(a) * r * 0.95f).toFloat(), (sin(a) * r * 0.95f).toFloat()),
-                strokeWidth = 3.2f * density, cap = StrokeCap.Round
-            )
+        val cx = size.width / 2f
+        val cy = size.height / 2f
+        val teeth = 8
+        val period = 2 * PI / teeth
+        val root = r * 0.72f
+        val tip = r * 0.98f
+        fun pt(radius: Float, a: Double) = Offset(cx + (cos(a) * radius).toFloat(), cy + (sin(a) * radius).toFloat())
+        val gear = Path().apply {
+            fillType = PathFillType.EvenOdd
+            for (k in 0 until teeth) {
+                val a = k * period - PI / 2
+                val p1 = pt(root, a - period * 0.3)
+                val p2 = pt(tip, a - period * 0.2)
+                val p3 = pt(tip, a + period * 0.2)
+                val p4 = pt(root, a + period * 0.3)
+                val mid = pt(root, a + period * 0.5)
+                if (k == 0) moveTo(p1.x, p1.y) else lineTo(p1.x, p1.y)
+                lineTo(p2.x, p2.y); lineTo(p3.x, p3.y); lineTo(p4.x, p4.y)
+                quadraticTo(mid.x, mid.y, pt(root, a + period * 0.7).x, pt(root, a + period * 0.7).y)
+            }
+            close()
+            val hole = r * 0.3f
+            addOval(Rect(cx - hole, cy - hole, cx + hole, cy + hole))
         }
-        drawCircle(color, r * 0.62f, c, style = Stroke(sw))
-        drawCircle(color, r * 0.25f, c, style = Stroke(sw))
+        drawPath(gear, color)
     }
 }
 
